@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: "日志筛选技能"
+  short_description: "按条件筛选日志并输出统计与预览"
+  default_prompt: "请使用 $log-filter-assistant 筛选日志，并用中文输出筛选统计表与证据预览。"

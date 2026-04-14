@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: "源码关联分析技能"
+  short_description: "将日志证据关联到源码并输出结构化分析"
+  default_prompt: "请使用 $source-correlation-assistant 完成日志+源码关联分析，并输出关键异常与证据链。"

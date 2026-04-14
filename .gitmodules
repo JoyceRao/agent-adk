@@ -1,0 +1,3 @@
+[submodule "source/GZCheSuPaiApp"]
+	path = source/GZCheSuPaiApp
+	url = https://git.guazi-corp.com/wuxian-ios/GZCheSuPaiApp.git

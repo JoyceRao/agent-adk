@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: "日志编排技能"
+  short_description: "按用户目标编排筛选、分析、报告技能"
+  default_prompt: "请使用 $log-orchestrator-assistant 编排日志分析流程，并按需调用筛选、源码关联和 CRISP-L 报告技能。"

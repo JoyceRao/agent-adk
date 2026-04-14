@@ -1,0 +1,4 @@
+interface:
+  display_name: "日志分析助手"
+  short_description: "分析应用日志并输出根因结论"
+  default_prompt: "请使用 $log-analysis-assistant 分析日志：先做条件筛选，再做全量模式统计与时间线分析，随后给出根因假设、证据点（行号/时间戳/关键词）和可执行修复建议；如需交付请输出 CRISP-L 报告。"

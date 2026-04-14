@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: "CRISP-L 报告技能"
+  short_description: "输出 CRISP-L 结构化日志分析报告"
+  default_prompt: "请使用 $crisp-l-report-assistant 输出 CRISP-L 报告，先给结论与修复建议，再展开各章节。"
