@@ -19,10 +19,12 @@ from tools import (
     list_skills,
     route_by_skill,
     scan_patterns_full,
+    update_gzchesupai_source_by_commit,
 )
 
 __all__ = [
     "filter_logs",
+    "update_gzchesupai_source_by_commit",
     "analyze_log_with_source",
     "scan_patterns_full",
     "build_timeline",

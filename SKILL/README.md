@@ -149,6 +149,15 @@ print(report[:600])
 PY
 ```
 
+补充：如需按 commit 更新 `source/GZCheSuPaiApp` 源码仓库，可直接调用：
+
+```text
+调用 update_gzchesupai_source_by_commit(
+  commit="a1b2c3d4",
+  source_repo_root="source/GZCheSuPaiApp"
+)
+```
+
 ---
 
 ## 6. 常见落地建议

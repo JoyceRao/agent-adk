@@ -20,6 +20,7 @@ try:
         list_skills,
         route_by_skill,
         scan_patterns_full,
+        update_gzchesupai_source_by_commit,
     )
 except ImportError:
     from prompt import (
@@ -39,6 +40,7 @@ except ImportError:
         list_skills,
         route_by_skill,
         scan_patterns_full,
+        update_gzchesupai_source_by_commit,
     )
 
 
@@ -119,6 +121,7 @@ root_agent = Agent(
         route_by_skill,
         analyze_and_generate_report,
         analyze_start_live_flow_and_generate_crisp_l_report,
+        update_gzchesupai_source_by_commit,
     ],
     sub_agents=[
         filter_agent,

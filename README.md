@@ -235,6 +235,18 @@ max_output_lines=200
 说明：不传 `start_live_report_filename/start_live_json_filename` 时，
 默认输出为 `output/[log文件名].md` 与 `output/[log文件名].json`。
 
+```text
+调用 update_gzchesupai_source_by_commit(
+  commit="a1b2c3d4",
+  source_repo_root="source/GZCheSuPaiApp"
+)
+```
+
+说明：该工具会在 `source_repo_root` 串行执行：
+1. `git pull`
+2. `git submodule update`
+3. `git checkout <commit>`
+
 ### 7.3 在 Python 中直接调用 tools（脚本化）
 
 #### 7.3.1 一键报告（最常用）
@@ -390,6 +402,7 @@ PY
 | `generate_start_live_flow_markdown` | 兼容旧接口，统一渲染 CRISP-L 开播链路报告 | `analysis/title` |
 | `analyze_start_live_flow_and_generate_crisp_l_report` | 开播链路一键 CRISP-L 报告落盘 | `log_path/output_dir/(可选)report_filename/json_filename` |
 | `analyze_start_live_flow_and_generate_report` | 旧函数名兼容入口（同上） | `log_path/output_dir/(可选)report_filename/json_filename` |
+| `update_gzchesupai_source_by_commit` | 按 commit 更新 GZCheSuPaiApp 源码仓库（串行执行 pull/submodule/checkout） | `commit/source_repo_root` |
 | `list_skills` | 列出可路由 skill | 无 |
 | `route_by_skill` | 按 skill_name 确定性路由 | `skill_name/log_path/...` |
 
