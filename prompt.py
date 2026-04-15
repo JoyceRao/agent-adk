@@ -17,6 +17,7 @@ ROOT_AGENT_INSTRUCTION = """
 
 Skill 到路由目标（固定映射）：
 - `log-filter-assistant` / `filter` -> `filter_agent` -> `filter_logs`
+- `log-analysis-assistant` / `log-analysis` -> `analysis_agent` -> `analyze_log_with_source`
 - `source-correlation-assistant` / `analysis` / `source` -> `analysis_agent` -> `analyze_log_with_source`
 - `crisp-l-report-assistant` / `report` / `crisp-l` -> `report_agent` -> `analyze_and_generate_report`
 - `start-live-flow-assistant` / `start-live` -> `report_agent` -> `analyze_start_live_flow_and_generate_crisp_l_report`

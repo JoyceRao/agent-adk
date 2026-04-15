@@ -5,12 +5,15 @@ Goals:
 1) Find common runtime blockers before `adk run` / `adk web`.
 2) Especially catch proxy misconfigurations that break model calls.
 3) Provide actionable fixes in Chinese.
+4) Guard ADK extension sync: new skill/tool must update routing and exports.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
+import re
 import socket
 import sys
 from pathlib import Path
@@ -102,6 +105,106 @@ def _check_llm_endpoint_connectivity(endpoint_url: str, timeout: float = 1.5) ->
         return (False, f"LLM 端点不可达: {host}:{port} ({exc})")
 
 
+def _load_skill_names_from_skill_dir(root_dir: Path) -> set[str]:
+    """从 SKILL/*/SKILL.md 读取 skill 名称。"""
+    skill_root = root_dir / "SKILL"
+    if not skill_root.exists() or not skill_root.is_dir():
+        return set()
+
+    skill_names: set[str] = set()
+    for child in skill_root.iterdir():
+        if not child.is_dir():
+            continue
+        skill_md = child / "SKILL.md"
+        if not skill_md.exists():
+            continue
+
+        text = skill_md.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+        parsed_name = ""
+        if lines and lines[0].strip() == "---":
+            for line in lines[1:]:
+                if line.strip() == "---":
+                    break
+                match = re.match(r"^\s*name\s*:\s*([A-Za-z0-9_-]+)\s*$", line)
+                if match:
+                    parsed_name = match.group(1).strip()
+                    break
+        skill_names.add(parsed_name or child.name)
+    return skill_names
+
+
+def _load_tools_shim_all(root_dir: Path) -> list[str]:
+    """通过文件路径加载 tools.py 兼容层，读取 __all__。"""
+    shim_path = root_dir / "tools.py"
+    if not shim_path.exists():
+        return []
+
+    spec = importlib.util.spec_from_file_location("_codex_tools_shim_check", shim_path)
+    if not spec or not spec.loader:
+        return []
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[assignment]
+    return list(getattr(module, "__all__", []) or [])
+
+
+def _check_adk_extension_sync(root_dir: Path) -> tuple[list[str], list[str]]:
+    """检查 Skill/Tool 扩展是否同步到 ADK 关键接入点。"""
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    try:
+        from tools import __all__ as tools_package_all  # type: ignore
+        from tools.skill_router import SKILL_DEFINITIONS  # type: ignore
+    except Exception as exc:
+        errors.append(f"扩展同步检查失败（导入 tools/skill_router 异常）: {exc}")
+        return errors, warnings
+
+    router_skills = set(SKILL_DEFINITIONS.keys())
+    declared_skills = _load_skill_names_from_skill_dir(root_dir)
+
+    missing_in_router = sorted(declared_skills - router_skills)
+    if missing_in_router:
+        errors.append(
+            "以下 SKILL 已声明但未注册到 tools/skill_router.SKILL_DEFINITIONS: "
+            + ", ".join(missing_in_router)
+        )
+
+    missing_in_skill_dir = sorted(router_skills - declared_skills)
+    if missing_in_skill_dir:
+        errors.append(
+            "以下 skill 已在 tools/skill_router 注册，但 SKILL 目录缺少对应 SKILL.md: "
+            + ", ".join(missing_in_skill_dir)
+        )
+
+    prompt_path = root_dir / "prompt.py"
+    prompt_text = prompt_path.read_text(encoding="utf-8", errors="ignore") if prompt_path.exists() else ""
+    missing_in_prompt = sorted([skill for skill in router_skills if skill not in prompt_text])
+    if missing_in_prompt:
+        errors.append(
+            "以下 skill 未在 prompt.py 显式出现（需同步更新路由说明）: "
+            + ", ".join(missing_in_prompt)
+        )
+
+    package_exports = set(str(x).strip() for x in (tools_package_all or []) if str(x).strip())
+    shim_exports = set(str(x).strip() for x in _load_tools_shim_all(root_dir) if str(x).strip())
+    only_in_package = sorted(package_exports - shim_exports)
+    only_in_shim = sorted(shim_exports - package_exports)
+    if only_in_package or only_in_shim:
+        parts: list[str] = []
+        if only_in_package:
+            parts.append("仅 tools/__init__.py 导出: " + ", ".join(only_in_package))
+        if only_in_shim:
+            parts.append("仅 tools.py 导出: " + ", ".join(only_in_shim))
+        errors.append("tools 导出不一致（新增 tool 后需同步兼容层）: " + "；".join(parts))
+
+    if not declared_skills:
+        warnings.append("未在 SKILL/ 目录发现可用 skill 声明。")
+
+    return errors, warnings
+
+
 def run_checks(args: argparse.Namespace) -> int:
     print("== ADK 启动前自检 ==")
     print(f"项目目录: {ROOT_DIR}")
@@ -144,6 +247,18 @@ def run_checks(args: argparse.Namespace) -> int:
     except Exception as exc:
         _fail(f"tools.list_skills/route_by_skill 加载失败: {exc}")
         failed += 1
+
+    # 2.1) 扩展同步守卫（新增 skill/tool 时必须同步 ADK 接入层）
+    sync_errors, sync_warnings = _check_adk_extension_sync(ROOT_DIR)
+    if sync_errors:
+        for msg in sync_errors:
+            _fail(msg)
+            failed += 1
+    else:
+        _ok("扩展同步检查通过（SKILL 声明、skill_router、prompt、tools 导出已对齐）")
+    for msg in sync_warnings:
+        _warn(msg)
+        warned += 1
 
     # 3) Env essentials
     # DOUBAO_* 优先，其次回退 OPENAI_*（兼容旧配置）。
@@ -278,7 +393,7 @@ def run_checks(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ADK 启动前自检（代理/环境/路径/工具路由）")
+    parser = argparse.ArgumentParser(description="ADK 启动前自检（代理/环境/路径/工具路由/扩展同步）")
     parser.add_argument("--log-path", default="", help="可选：日志文件路径，用于路径检查与路由冒烟")
     parser.add_argument("--source-root", default="source/GZCheSuPaiApp", help="源码根目录")
     parser.add_argument("--rule-path", default="source/log_rule.md", help="规则文件路径")

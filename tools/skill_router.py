@@ -17,6 +17,12 @@ SKILL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "aliases": ["filter", "log-filter", "filter-skill"],
         "description": "日志筛选与预览输出。",
     },
+    "log-analysis-assistant": {
+        "delegated_agent": "analysis_agent",
+        "tool": "analyze_log_with_source",
+        "aliases": ["log-analysis", "log-analysis-skill"],
+        "description": "日志分析主技能（兼容旧名），路由到日志+源码关联分析。",
+    },
     "source-correlation-assistant": {
         "delegated_agent": "analysis_agent",
         "tool": "analyze_log_with_source",
@@ -141,7 +147,7 @@ def route_by_skill(
             "result": result,
         }
 
-    if normalized_skill == "source-correlation-assistant":
+    if normalized_skill in {"source-correlation-assistant", "log-analysis-assistant"}:
         missing = _require_log_path()
         if missing:
             return missing

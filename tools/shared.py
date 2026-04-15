@@ -394,46 +394,28 @@ START_LIVE_STAGE_ORDER: list[tuple[str, str, int]] = [
     # 恢复链路（通常是开播流程前置检查）
     ("recover_check_start", "恢复链路", 110),
     ("recover_api_failure", "恢复链路", 120),
-    ("recover_route_decision", "恢复链路", 130),
-    ("recover_handle_result", "恢复链路", 140),
-    ("recover_go_realtime_popup", "恢复链路", 150),
     # IM 触发实时呼叫
     ("im_event_received", "IM触发实时呼叫", 210),
     ("im_event_route_realtime_call", "IM触发实时呼叫", 220),
     ("realtime_call_handler_enter", "IM触发实时呼叫", 230),
     ("realtime_call_foreground_present", "IM触发实时呼叫", 240),
     ("realtime_call_background_notify", "IM触发实时呼叫", 250),
-    ("realtime_popup_will_present", "IM触发实时呼叫", 260),
-    ("realtime_popup_present", "IM触发实时呼叫", 270),
-    ("realtime_popup_presented", "IM触发实时呼叫", 280),
-    ("realtime_popup_skip_priority", "IM触发实时呼叫", 285),
-    ("realtime_popup_skip_small_window", "IM触发实时呼叫", 286),
     # 弹窗点击开播
-    ("realtime_popup_view_did_load", "弹窗点击开播", 310),
-    ("realtime_popup_load_data_start", "弹窗点击开播", 320),
-    ("realtime_popup_load_data_result", "弹窗点击开播", 330),
     ("realtime_click_enter_room", "弹窗点击开播", 340),
     ("realtime_click_enter_room_result", "弹窗点击开播", 350),
     ("precreate_start", "弹窗点击开播", 360),
     ("precreate_success", "弹窗点击开播", 370),
     ("precreate_disabled", "弹窗点击开播", 380),
     ("precreate_failure", "弹窗点击开播", 381),
-    ("precreate_sign_data_nil", "弹窗点击开播", 382),
     # 跳转直播页并加载直播数据
     ("jump_recover_enter", "跳转直播页并加载直播数据", 410),
     ("jump_recover_present_livevc", "跳转直播页并加载直播数据", 420),
     ("jump_recover_livevc_presented", "跳转直播页并加载直播数据", 430),
     ("livevc_view_did_load", "跳转直播页并加载直播数据", 440),
-    ("livevc_init_data_start", "跳转直播页并加载直播数据", 450),
     ("livevc_enter_room_success", "跳转直播页并加载直播数据", 460),
-    ("livevc_enter_room_fail", "跳转直播页并加载直播数据", 461),
     ("livevc_update_room_status_success", "跳转直播页并加载直播数据", 470),
     ("livevc_update_room_status_resume_direct_load", "跳转直播页并加载直播数据", 471),
-    ("livevc_update_room_status_failure", "跳转直播页并加载直播数据", 472),
-    ("livevc_load_live_room_data_start", "跳转直播页并加载直播数据", 480),
-    ("livevc_load_room_info_success", "跳转直播页并加载直播数据", 490),
     ("livevc_load_room_info_failure", "跳转直播页并加载直播数据", 491),
-    ("livevc_load_app_config_success", "跳转直播页并加载直播数据", 500),
     ("livevc_load_live_room_data_finish", "跳转直播页并加载直播数据", 510),
 ]
 
@@ -444,13 +426,8 @@ START_LIVE_STAGE_MAP: dict[str, dict[str, Any]] = {
 
 START_LIVE_FAILURE_STAGES: set[str] = {
     "recover_api_failure",
-    "realtime_popup_skip_priority",
-    "realtime_popup_skip_small_window",
     "precreate_disabled",
     "precreate_failure",
-    "precreate_sign_data_nil",
-    "livevc_enter_room_fail",
-    "livevc_update_room_status_failure",
     "livevc_load_room_info_failure",
 }
 

@@ -22,6 +22,13 @@ from .shared import (
 
 DEFAULT_START_LIVE_REPORT_FILENAME = "start_live_flow_report.md"
 DEFAULT_START_LIVE_JSON_FILENAME = "start_live_flow_report.json"
+NON_RISK_SOURCE_CONCLUSION_HINTS = (
+    "未发现显著异常模式",
+    "未识别到显著异常问题",
+)
+NON_RISK_SOURCE_TRIGGER_HINTS = (
+    "统计未触发异常阈值",
+)
 
 
 def resolve_start_live_output_filenames(
@@ -306,6 +313,13 @@ def _build_flow_evidence_lines(
     return lines
 
 
+def _is_non_risk_source_signal(conclusion: str, trigger_condition: str = "") -> bool:
+    text = f"{conclusion} {trigger_condition}".strip()
+    if not text:
+        return False
+    return any(hint in text for hint in NON_RISK_SOURCE_CONCLUSION_HINTS + NON_RISK_SOURCE_TRIGGER_HINTS)
+
+
 def _merge_start_live_and_source(
     start_live_analysis: dict[str, Any],
     source_analysis: dict[str, Any],
@@ -353,6 +367,12 @@ def _merge_start_live_and_source(
     stage_distribution_items = sorted(stage_distribution.items(), key=lambda x: (-x[1], x[0]))
 
     source_anomalies = source_analysis.get("anomalies", []) or []
+    source_problems = (
+        source_analysis.get("crisp_l", {})
+        .get("conclusion", {})
+        .get("problems", [])
+        or []
+    )
     raw_problems: list[dict[str, Any]] = []
 
     if flow_count <= 0:
@@ -430,17 +450,46 @@ def _merge_start_live_and_source(
             }
         )
 
-    if source_anomalies:
-        top_anomaly = source_anomalies[0]
+    actionable_source_problem: Optional[dict[str, Any]] = None
+    for source_problem in source_problems:
+        conclusion = str(source_problem.get("conclusion", "")).strip()
+        trigger_condition = str(source_problem.get("trigger_condition", "")).strip()
+        if _is_non_risk_source_signal(
+            conclusion=conclusion,
+            trigger_condition=trigger_condition,
+        ):
+            continue
+        actionable_source_problem = {
+            "name": conclusion,
+            "severity": str(source_problem.get("severity", "P1") or "P1"),
+            "evidence": str(source_problem.get("evidence_summary", "")),
+            "advice": str(source_problem.get("suggestion", "")),
+        }
+        break
+
+    if not actionable_source_problem:
+        for source_anomaly in source_anomalies:
+            anomaly_name = str(source_anomaly.get("name", "")).strip()
+            if _is_non_risk_source_signal(conclusion=anomaly_name, trigger_condition=""):
+                continue
+            actionable_source_problem = {
+                "name": anomaly_name,
+                "severity": str(source_anomaly.get("severity", "P1") or "P1"),
+                "evidence": str(source_anomaly.get("evidence", "")),
+                "advice": str(source_anomaly.get("advice", "")),
+            }
+            break
+
+    if actionable_source_problem:
         raw_problems.append(
             {
-                "conclusion": f"通用异常分析检测到风险信号：{top_anomaly.get('name', '')}",
+                "conclusion": f"通用异常分析检测到风险信号：{actionable_source_problem.get('name', '')}",
                 "impact": "日志+源码联合分析命中异常模式，可能放大开播失败或卡点问题。",
-                "severity": str(top_anomaly.get("severity", "P1") or "P1"),
+                "severity": str(actionable_source_problem.get("severity", "P1") or "P1"),
                 "confidence": "中",
                 "trigger_condition": "analyze_log_with_source 命中异常模式统计阈值",
-                "evidence_summary": str(top_anomaly.get("evidence", "")),
-                "suggestion": str(top_anomaly.get("advice", "")) or "按源码命中点补齐埋点并验证分支。",
+                "evidence_summary": str(actionable_source_problem.get("evidence", "")),
+                "suggestion": str(actionable_source_problem.get("advice", "")) or "按源码命中点补齐埋点并验证分支。",
                 "stage": "source_correlation",
             }
         )

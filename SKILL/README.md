@@ -61,6 +61,15 @@
 2. 证据预览允许抽样展示。
 3. `max_output_lines` 只影响预览，不影响统计结论。
 
+### 3.4 扩展同步规则（新增）
+
+后续拓展 Skill 或 Tool，必须同步更新 ADK 工程，避免“能力实现了但路由/导出没接入”：
+
+1. 新 Skill：同步 `SKILL/*/SKILL.md`、`tools/skill_router.py`、`prompt.py`。
+2. 新 Tool：同步 `tools/__init__.py` 与根目录 `tools.py` 的 `__all__` 导出。
+3. 需要对话可调度时：同步 `agent.py` 的 tools/sub_agents 暴露。
+4. 提交前执行 `scripts/preflight_check.sh`，通过“扩展同步检查”后再交付。
+
 ---
 
 ## 4. ADK + Skill 使用示例

@@ -113,6 +113,19 @@ scripts/preflight_check.sh \
 2. 结论必须给证据（行号/时间戳/关键词/源码定位）。
 3. 数据不足时必须标注“条件化结论”。
 
+### 5.4 扩展同步规则（新增）
+
+后续新增或扩展 `skill/tool` 时，必须同步更新 ADK 工程接入层，禁止只改单点实现：
+
+1. 新增 Skill 时，至少同步：`SKILL/*/SKILL.md`、`tools/skill_router.py`、`prompt.py`。
+2. 新增 Tool 时，至少同步：`tools/__init__.py` 与根目录 `tools.py`（兼容导出保持一致）。
+3. 若需要在会话路由中可见，还需同步 `agent.py` 的 tools/sub_agents 暴露。
+4. 改动后必须执行自检，确保“扩展同步检查通过”：
+
+```bash
+scripts/preflight_check.sh --route-smoke --log-path source/resource/<your_log>.log
+```
+
 ---
 
 ## 6. ADK + Skill 使用规范
