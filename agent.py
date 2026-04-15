@@ -12,6 +12,8 @@ try:
     from .tools import (
         analyze_and_generate_report,
         analyze_log_with_source,
+        analyze_start_live_flow_and_generate_crisp_l_report,
+        analyze_start_live_flow_with_source,
         build_timeline,
         filter_logs,
         generate_markdown_report,
@@ -29,6 +31,8 @@ except ImportError:
     from tools import (
         analyze_and_generate_report,
         analyze_log_with_source,
+        analyze_start_live_flow_and_generate_crisp_l_report,
+        analyze_start_live_flow_with_source,
         build_timeline,
         filter_logs,
         generate_markdown_report,
@@ -82,7 +86,12 @@ analysis_agent = Agent(
     name="analysis_agent",
     description="Analyze filtered logs with source code correlation and statistical indicators.",
     instruction=ANALYSIS_AGENT_INSTRUCTION,
-    tools=[scan_patterns_full, build_timeline, analyze_log_with_source],
+    tools=[
+        scan_patterns_full,
+        build_timeline,
+        analyze_log_with_source,
+        analyze_start_live_flow_with_source,
+    ],
 )
 
 # 子 Agent 3：仅做 CRISP-L 报告生成/落盘
@@ -91,7 +100,11 @@ report_agent = Agent(
     name="report_agent",
     description="Generate CRISP-L markdown report and write report file when requested.",
     instruction=REPORT_AGENT_INSTRUCTION,
-    tools=[generate_markdown_report, analyze_and_generate_report],
+    tools=[
+        generate_markdown_report,
+        analyze_and_generate_report,
+        analyze_start_live_flow_and_generate_crisp_l_report,
+    ],
 )
 
 root_agent = Agent(
@@ -105,6 +118,7 @@ root_agent = Agent(
         list_skills,
         route_by_skill,
         analyze_and_generate_report,
+        analyze_start_live_flow_and_generate_crisp_l_report,
     ],
     sub_agents=[
         filter_agent,

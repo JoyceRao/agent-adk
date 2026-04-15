@@ -30,7 +30,7 @@
 
 |能力|说明|
 |---|---|
-|日志筛选|支持按 start_ts_ms（起始时间戳）、end_ts_ms（结束时间戳）、log_type（日志类型）、level（日志级别）、keywords（关键词）等条件筛选，大幅缩减日志分析量，聚焦核心日志。|
+|日志筛选|支持按 start_ts_ms（起始时间戳）、end_ts_ms（结束时间戳）、log_type（日志类型）、level（日志级别）、keywords（关键词）、c_startswith（c 字段前缀）等条件筛选，大幅缩减日志分析量，聚焦核心日志。|
 |全量模式统计|对筛选后的全量日志样本进行异常模式统计，不受预览窗口条数限制，确保统计结论的准确性，避免抽样误判。|
 |时间线分析|按指定时间桶（bucket_ms）聚合日志数据，自动识别日志波峰窗口及模式命中分布，助力定位异常集中时段。|
 |源码关联|自动从日志中提取“文件:行号”信息，并关联对应源码目录，回填源码片段，辅助根因定位。|
@@ -53,6 +53,7 @@
 |log_type|int|否|日志类型（如 1、99 等），用于筛选特定类型的日志，不填则匹配所有类型。|
 |level|str|否|日志级别，可选值为 INFO、WARN、ERROR、DEBUG，不填则匹配所有级别。|
 |keywords|str|否|筛选关键词，多个关键词用逗号分隔，采用 OR 匹配规则（满足任一关键词即命中）。|
+|c_startswith|str|否|c 字段前缀匹配，传 1 时等价匹配 "-:1"。|
 |pattern_keywords|str|否|额外模式关键词，仅用于全量模式统计和时间线分析，辅助识别特定异常模式。|
 |max_output_lines|int|否|日志预览窗口条数，仅影响预览结果，不影响全量统计结论，默认值可根据场景调整。|
 |bucket_ms|int|否|时间线分析的时间桶大小（单位：毫秒），用于日志聚合，不填则使用默认桶大小。|
@@ -322,7 +323,7 @@ PY
 
 |函数|作用|关键参数|
 |---|---|---|
-|filter_logs|按条件筛选日志，并返回预览结果，缩减分析量|start_ts_ms、end_ts_ms、log_type、level、keywords、max_output_lines|
+|filter_logs|按条件筛选日志，并返回预览结果，缩减分析量|start_ts_ms、end_ts_ms、log_type、level、keywords、c_startswith、max_output_lines|
 |scan_patterns_full|对筛选后的全量日志进行模式统计，提取异常模式及证据|pattern_keywords、include_default_patterns、evidence_per_pattern|
 |build_timeline|按时间桶聚合日志，提取波峰窗口及模式命中分布|bucket_ms、max_output_buckets、pattern_keywords|
 |analyze_log_with_source|结合源码进行异常根因研判，关联源码片段及相关指标|source_root、rule_path、max_source_matches|

@@ -14,6 +14,7 @@
 | `log-filter-assistant` | 日志筛选与预览输出 | `filter_agent` | `filter_logs` |
 | `source-correlation-assistant` | 日志 + 源码关联分析 | `analysis_agent` | `scan_patterns_full` / `build_timeline` / `analyze_log_with_source` |
 | `crisp-l-report-assistant` | CRISP-L 报告渲染与落盘 | `report_agent` | `analyze_and_generate_report` / `generate_markdown_report` |
+| `start-live-flow-assistant` | 开播链路 flow 聚合 + 源码关联 + CRISP-L 报告 | `report_agent` | `analyze_start_live_flow_with_source` / `analyze_start_live_flow_and_generate_crisp_l_report` |
 | `log-orchestrator-assistant` | 多技能编排与流程守卫 | `root_agent` | `route_by_skill`（编排链路） |
 
 ---
@@ -32,6 +33,7 @@
 | `log_type` | `int` | 否 | 外层日志类型（如 `1` / `99`） |
 | `level` | `str` | 否 | `INFO/WARN/ERROR/DEBUG` |
 | `keywords` | `str` | 否 | 关键词，逗号分隔（OR 匹配） |
+| `c_startswith` | `str` | 否 | `c` 字段前缀匹配，传 `1` 等价匹配 `"-:1"` |
 | `pattern_keywords` | `str` | 否 | 额外模式关键词（全量模式统计/时间线） |
 | `bucket_ms` | `int` | 否 | 时间线聚合桶大小（毫秒） |
 | `max_output_lines` | `int` | 否 | 预览窗口条数 |

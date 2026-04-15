@@ -1,0 +1,5 @@
+---
+interface:
+  display_name: "startLive 开播链路技能"
+  short_description: "按 flow 聚合并生成 CRISP-L 开播链路报告"
+  default_prompt: "请使用 $start-live-flow-assistant 分析开播日志，并输出带源码证据的 CRISP-L 报告。"

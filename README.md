@@ -22,7 +22,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| 日志筛选 | 按 `start_ts_ms/end_ts_ms/log_type/level/keywords` 缩减日志量 |
+| 日志筛选 | 按 `start_ts_ms/end_ts_ms/log_type/level/keywords/c_startswith` 缩减日志量 |
 | 全量模式统计 | 对筛选后的全量样本统计异常模式，不受预览窗口截断影响 |
 | 时间线分析 | 按时间桶聚合，输出波峰窗口与模式命中分布 |
 | 源码关联 | 自动从日志提取 `文件:行号` 并回填源码片段 |
@@ -81,6 +81,7 @@ scripts/preflight_check.sh \
 | `log_type` | `int` | 否 | 日志类型（如 `1` / `99`） |
 | `level` | `str` | 否 | `INFO/WARN/ERROR/DEBUG` |
 | `keywords` | `str` | 否 | 关键词，逗号分隔（OR 匹配） |
+| `c_startswith` | `str` | 否 | `c` 字段前缀匹配，传 `1` 等价匹配 `"-:1"` |
 | `pattern_keywords` | `str` | 否 | 额外模式关键词（全量模式统计/时间线） |
 | `max_output_lines` | `int` | 否 | 预览窗口条数 |
 | `bucket_ms` | `int` | 否 | 时间线桶大小（毫秒） |
@@ -149,6 +150,11 @@ adk web .
 请使用 $crisp-l-report-assistant 直接输出 CRISP-L 报告并写入 output。
 ```
 
+```text
+请使用 $start-live-flow-assistant 分析 source/resource/xxx.log，
+按 flowId 输出最后流程和 stage，结合源码证据生成 CRISP-L 开播链路报告（默认写入 output/[log文件名].md）。
+```
+
 ### 6.4 运行时路由 Skill 名称（`route_by_skill`）
 
 | `skill_name` | 作用 | 路由 |
@@ -156,6 +162,7 @@ adk web .
 | `log-filter-assistant` | 筛选与预览 | `filter_agent -> filter_logs` |
 | `source-correlation-assistant` | 联合分析 | `analysis_agent -> analyze_log_with_source` |
 | `crisp-l-report-assistant` | 一键报告 | `report_agent -> analyze_and_generate_report` |
+| `start-live-flow-assistant` | 开播链路 flow 分组 + 源码关联 + CRISP-L 报告 | `report_agent -> analyze_start_live_flow_and_generate_crisp_l_report` |
 | `log-orchestrator-assistant` | 串行编排 | `root_agent -> filter -> analysis -> report` |
 
 ---
@@ -194,6 +201,26 @@ max_output_lines=200
   output_dir="output"
 )
 ```
+
+```text
+调用 route_by_skill(
+  skill_name="start-live-flow-assistant",
+  log_path="source/resource/20_61B17947-82FD-4113-9A8B-02EB0080E449_1775318400000_df646c18-0ca9-49ae-9f95-3fc9d3ae4c83.log",
+  start_ts_ms=1775530200000,
+  end_ts_ms=1775532000000,
+  c_startswith="1",
+  keywords="CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
+  max_flows=500,
+  include_stage_path=true,
+  exclude_last_stage="recover_check_start",
+  generate_start_live_report=true,
+  output_dir="output",
+  title="startLive 开播链路日志报告"
+)
+```
+
+说明：不传 `start_live_report_filename/start_live_json_filename` 时，
+默认输出为 `output/[log文件名].md` 与 `output/[log文件名].json`。
 
 ### 7.3 在 Python 中直接调用 tools（脚本化）
 
@@ -302,18 +329,54 @@ print("report_path:", res.get("report_path"))
 PY
 ```
 
----
+#### 7.3.6 start_live_flow_assistant（脚本场景）
+
+```bash
+python3 - <<'PY'
+from tools import route_by_skill
+
+res = route_by_skill(
+    skill_name="start-live-flow-assistant",
+    log_path="source/resource/20_61B17947-82FD-4113-9A8B-02EB0080E449_1775318400000_df646c18-0ca9-49ae-9f95-3fc9d3ae4c83.log",
+    c_startswith="1",
+    keywords="CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
+    max_flows=300,
+    include_stage_path=True,
+    generate_start_live_report=True,
+    output_dir="output",
+    title="startLive 开播链路日志报告",
+)
+print("skill:", res.get("normalized_skill_name"))
+print("report_path:", res.get("report_path"))
+print("json_path:", res.get("json_path"))
+PY
+```
+
+默认会写入：
+- `output/[log文件名].md`
+- `output/[log文件名].json`
+
+如需自定义文件名，可额外传：
+- `start_live_report_filename="custom_name.md"`
+- `start_live_json_filename="custom_name.json"`
+
+
 
 ## 8. 主要工具清单
 
 | 函数 | 作用 | 关键参数 |
 |---|---|---|
-| `filter_logs` | 条件筛选 + 预览 | `start_ts_ms/end_ts_ms/log_type/level/keywords/max_output_lines` |
+| `filter_logs` | 条件筛选 + 预览 | `start_ts_ms/end_ts_ms/log_type/level/keywords/c_startswith/max_output_lines` |
 | `scan_patterns_full` | 全量样本模式统计 + 证据提取 | `pattern_keywords/include_default_patterns/evidence_per_pattern` |
 | `build_timeline` | 时间线桶聚合 + 波峰提取 | `bucket_ms/max_output_buckets/pattern_keywords` |
 | `analyze_log_with_source` | 异常研判 + 源码关联 + 指标 | `source_root/rule_path/max_source_matches` |
 | `generate_markdown_report` | 渲染 CRISP-L Markdown | `analysis/title` |
 | `analyze_and_generate_report` | 一键分析并落盘 | `log_path/output_dir/title` |
+| `analyze_start_live_flow` | 开播链路按 flowId 分组分析 | `log_path/max_flows/include_stage_path/exclude_last_stage` |
+| `analyze_start_live_flow_with_source` | 开播链路 flow + 源码关联融合分析 | `log_path/source_root/rule_path/max_flows` |
+| `generate_start_live_flow_markdown` | 兼容旧接口，统一渲染 CRISP-L 开播链路报告 | `analysis/title` |
+| `analyze_start_live_flow_and_generate_crisp_l_report` | 开播链路一键 CRISP-L 报告落盘 | `log_path/output_dir/(可选)report_filename/json_filename` |
+| `analyze_start_live_flow_and_generate_report` | 旧函数名兼容入口（同上） | `log_path/output_dir/(可选)report_filename/json_filename` |
 | `list_skills` | 列出可路由 skill | 无 |
 | `route_by_skill` | 按 skill_name 确定性路由 | `skill_name/log_path/...` |
 

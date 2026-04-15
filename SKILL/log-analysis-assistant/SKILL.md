@@ -34,6 +34,7 @@ description: 面向移动端与后端运行日志的排障技能。用于分析 
 | `log_type` | `int` | 否 | 外层日志类型（如 `1` / `99`） |
 | `level` | `str` | 否 | `INFO/WARN/ERROR/DEBUG` |
 | `keywords` | `str` | 否 | 关键词，逗号分隔（OR 匹配） |
+| `c_startswith` | `str` | 否 | `c` 字段前缀匹配，传 `1` 等价匹配 `"-:1"` |
 | `pattern_keywords` | `str` | 否 | 额外模式关键词 |
 | `bucket_ms` | `int` | 否 | 时间线桶大小 |
 | `max_output_lines` | `int` | 否 | 预览条数上限 |

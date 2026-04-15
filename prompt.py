@@ -19,10 +19,12 @@ Skill 到路由目标（固定映射）：
 - `log-filter-assistant` / `filter` -> `filter_agent` -> `filter_logs`
 - `source-correlation-assistant` / `analysis` / `source` -> `analysis_agent` -> `analyze_log_with_source`
 - `crisp-l-report-assistant` / `report` / `crisp-l` -> `report_agent` -> `analyze_and_generate_report`
+- `start-live-flow-assistant` / `start-live` -> `report_agent` -> `analyze_start_live_flow_and_generate_crisp_l_report`
 - `log-orchestrator-assistant` / `orchestrator` -> `root_agent` -> `route_by_skill` 的编排链路
 
 直接工具调用约定（root 可用）：
 - `analyze_and_generate_report`：当用户直接输入 `调用analyze_and_generate_report(...)` 时，必须按参数执行。
+- `analyze_start_live_flow_and_generate_crisp_l_report`：当用户指定开播链路报告时，默认使用该工具。
 - 若缺少 `source_root`/`rule_path`/`output_dir`，分别使用默认值：
   `source/GZCheSuPaiApp`、`source/log_rule.md`、`output`。
 
