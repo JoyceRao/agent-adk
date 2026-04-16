@@ -22,7 +22,7 @@ def _run_command(cwd: str, argv: list[str]) -> dict[str, Any]:
 
 
 def update_gzchesupai_source_by_commit(
-    commit: str,
+    commit: str = "",
     source_repo_root: str = "source/GZCheSuPaiApp",
 ) -> dict[str, Any]:
     """按固定串行步骤更新 GZCheSuPaiApp 源码仓库。
@@ -31,14 +31,11 @@ def update_gzchesupai_source_by_commit(
     1) git pull
     2) git submodule update
     3) git checkout <commit>
+
+    当 commit 为空字符串时，先执行前两步，再将当前 HEAD 解析为最新 commit，
+    最后 checkout 到该 commit。
     """
     normalized_commit = str(commit or "").strip()
-    if not normalized_commit:
-        return {
-            "ok": False,
-            "error": "commit 不能为空。",
-            "steps": [],
-        }
 
     repo_path = Path(_abs_path(source_repo_root))
     if not repo_path.exists() or not repo_path.is_dir():
@@ -58,7 +55,6 @@ def update_gzchesupai_source_by_commit(
     commands = [
         ["git", "pull"],
         ["git", "submodule", "update"],
-        ["git", "checkout", normalized_commit],
     ]
 
     step_results: list[dict[str, Any]] = []
@@ -74,15 +70,47 @@ def update_gzchesupai_source_by_commit(
                 "steps": step_results,
             }
 
+    target_commit = normalized_commit
+    if not target_commit:
+        latest_head = _run_command(cwd=str(repo_path), argv=["git", "rev-parse", "HEAD"])
+        step_results.append(latest_head)
+        if latest_head["exit_code"] != 0:
+            return {
+                "ok": False,
+                "repo_path": str(repo_path),
+                "target_commit": "",
+                "failed_step": latest_head["command"],
+                "steps": step_results,
+            }
+        target_commit = latest_head.get("stdout", "").strip()
+        if not target_commit:
+            return {
+                "ok": False,
+                "repo_path": str(repo_path),
+                "target_commit": "",
+                "error": "未获取到最新 commit。",
+                "steps": step_results,
+            }
+
+    checkout_step = _run_command(cwd=str(repo_path), argv=["git", "checkout", target_commit])
+    step_results.append(checkout_step)
+    if checkout_step["exit_code"] != 0:
+        return {
+            "ok": False,
+            "repo_path": str(repo_path),
+            "target_commit": target_commit,
+            "failed_step": checkout_step["command"],
+            "steps": step_results,
+        }
+
     head_info = _run_command(cwd=str(repo_path), argv=["git", "rev-parse", "HEAD"])
     branch_info = _run_command(cwd=str(repo_path), argv=["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
     return {
         "ok": True,
         "repo_path": str(repo_path),
-        "target_commit": normalized_commit,
+        "target_commit": target_commit,
         "current_head": head_info.get("stdout", ""),
         "current_branch": branch_info.get("stdout", ""),
         "steps": step_results,
     }
-

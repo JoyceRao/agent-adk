@@ -28,6 +28,7 @@ Skill 到路由目标（固定映射）：
 - `analyze_start_live_flow_and_generate_crisp_l_report`：当用户指定开播链路报告时，默认使用该工具。
 - `update_gzchesupai_source_by_commit`：当用户要求按 commit 更新源码仓库时，按固定顺序执行
   `git pull -> git submodule update -> git checkout <commit>`。
+  若 `commit` 为空字符串或未传入，则默认 checkout 到 pull 后的最新 commit（HEAD）。
 - 若缺少 `source_root`/`rule_path`/`output_dir`，分别使用默认值：
   `source/GZCheSuPaiApp`、`source/log_rule.md`、`output`。
 - 若缺少 `source_repo_root`，默认使用 `source/GZCheSuPaiApp`。

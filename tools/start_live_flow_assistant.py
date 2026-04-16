@@ -22,6 +22,8 @@ from .shared import (
 
 DEFAULT_START_LIVE_REPORT_FILENAME = "start_live_flow_report.md"
 DEFAULT_START_LIVE_JSON_FILENAME = "start_live_flow_report.json"
+DEFAULT_START_LIVE_MAX_FLOWS = 2000
+START_LIVE_FIXED_SOURCE_ROOT = "source/GZCheSuPaiApp"
 NON_RISK_SOURCE_CONCLUSION_HINTS = (
     "未发现显著异常模式",
     "未识别到显著异常问题",
@@ -63,7 +65,7 @@ def analyze_start_live_flow(
     end_ts_ms: Optional[int] = None,
     c_startswith: str = "1",
     keywords: str = "CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
-    max_flows: int = 1000,
+    max_flows: int = DEFAULT_START_LIVE_MAX_FLOWS,
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
 ) -> dict[str, Any]:
@@ -111,7 +113,7 @@ def analyze_start_live_flow(
         )
 
     output_flows: list[dict[str, Any]] = []
-    extra_keys = ["reserveId", "sceneid", "dealer_id", "opl_user_id"]
+    extra_keys = ["reserveId", "roomId", "dealer_id", "opl_user_id"]
 
     for flow_id, events in flow_events.items():
         sorted_events = sorted(events, key=lambda x: (int(x["timestamp_ms"]), int(x["line_no"])))
@@ -212,7 +214,7 @@ def analyze_start_live_flow(
     effective_flows.sort(
         key=lambda x: (int(x.get("first_ts_ms", 0)), str(x.get("flowId", "")))
     )
-    safe_max_flows = max(1, int(max_flows or 1000))
+    safe_max_flows = max(1, int(max_flows or DEFAULT_START_LIVE_MAX_FLOWS))
     clipped_flows = effective_flows[:safe_max_flows]
     dropped_flows = max(0, len(effective_flows) - len(clipped_flows))
 
@@ -313,6 +315,49 @@ def _build_flow_evidence_lines(
     return lines
 
 
+def _pick_flow_extra_display_value(flow: dict[str, Any], key: str) -> str:
+    extra = flow.get("extra", {}) or {}
+    value = extra.get(key, "")
+    if isinstance(value, dict):
+        last_non_empty = str(value.get("last_non_empty", "")).strip()
+        if last_non_empty:
+            return last_non_empty
+        return str(value.get("first_non_empty", "")).strip()
+    return str(value).strip()
+
+
+def _build_abnormal_flows_table(flows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for flow in flows:
+        status = str(flow.get("status", "")).strip()
+        if status not in {"failure_end", "in_progress"}:
+            continue
+        rows.append(
+            {
+                "flowId": str(flow.get("flowId", "")).strip(),
+                "first_ts_ms": int(flow.get("first_ts_ms", 0) or 0),
+                "first_ts_text": str(flow.get("first_ts_text", "")).strip(),
+                "last_process": str(flow.get("last_process", "")).strip(),
+                "last_stage": str(flow.get("last_stage", "")).strip()
+                or str(flow.get("last_stage_by_time", "")).strip(),
+                "status": status,
+                "reserveId": _pick_flow_extra_display_value(flow, "reserveId"),
+                "roomId": _pick_flow_extra_display_value(flow, "roomId"),
+                "dealer_id": _pick_flow_extra_display_value(flow, "dealer_id"),
+                "opl_user_id": _pick_flow_extra_display_value(flow, "opl_user_id"),
+            }
+        )
+    status_priority = {"in_progress": 0, "failure_end": 1}
+    rows.sort(
+        key=lambda x: (
+            int(status_priority.get(str(x.get("status", "")).strip(), 9)),
+            -int(x.get("first_ts_ms", 0)),
+            str(x.get("flowId", "")),
+        )
+    )
+    return rows
+
+
 def _is_non_risk_source_signal(conclusion: str, trigger_condition: str = "") -> bool:
     text = f"{conclusion} {trigger_condition}".strip()
     if not text:
@@ -396,12 +441,18 @@ def _merge_start_live_and_source(
         top_failure_stage, top_failure_count = ("failure_end", failure_count)
         if failure_stage_counter:
             top_failure_stage, top_failure_count = failure_stage_counter.most_common(1)[0]
+        # 业务口径：recover_api_failure 在 start-live 报告中统一按 P2 展示。
+        failure_severity = (
+            "P2"
+            if top_failure_stage == "recover_api_failure"
+            else ("P0" if failure_ratio >= 0.2 else "P1")
+        )
         evidence_lines = _build_flow_evidence_lines(flows, status="failure_end", limit=3)
         raw_problems.append(
             {
                 "conclusion": f"开播链路存在失败收敛，主要停留在 `{top_failure_stage}`",
                 "impact": f"failure_end={failure_count}/{flow_count}（{_pct(failure_ratio)}），影响用户开播成功。",
-                "severity": "P0" if failure_ratio >= 0.2 else "P1",
+                "severity": failure_severity,
                 "confidence": "高" if failure_count >= 5 else "中",
                 "trigger_condition": "flow 最终状态命中 failure_end",
                 "evidence_summary": "; ".join(evidence_lines) if evidence_lines else "failure_end flow 存在",
@@ -686,6 +737,12 @@ def _merge_start_live_and_source(
     ]
 
     rollback_rule = "修复上线后 2 小时内 success_end 无提升且 failure_end 增长时执行回滚。"
+    abnormal_flows_table = _build_abnormal_flows_table(flows)
+    quick_summary_top_action = (
+        str(plan_actions[0].get("action", "")).strip()
+        if plan_actions
+        else "按失败 stage 与未收敛 stage 回放 stage_path，补齐关键分支证据。"
+    )
 
     merged_filter_summary = {
         "total_entries": int(source_filter_summary.get("total_entries", summary.get("total_entries", 0))),
@@ -749,19 +806,22 @@ def _merge_start_live_and_source(
             "source_root": _abs_path(source_root),
             "rule_path": _abs_path(rule_path),
         },
+        "report_profile": "start_live_compact",
         "filter_summary": merged_filter_summary,
         "pattern_counts": merged_pattern_counts,
         "anomalies": anomalies,
         "evidence_preview": merged_evidence_preview,
         "source_correlations": source_correlations,
+        "abnormal_flows_table": abnormal_flows_table,
         "rule_excerpt": source_rule_excerpt,
         "crisp_l": {
+            "quick_summary": {
+                "summary": summary_text,
+                "top_action": quick_summary_top_action,
+            },
             "conclusion": {
                 "summary": summary_text,
                 "problems": problems,
-            },
-            "reproduction": {
-                "scenarios": scenarios,
             },
             "indicators": {
                 "metrics": indicators,
@@ -770,6 +830,12 @@ def _merge_start_live_and_source(
             },
             "source_correlation": {
                 "hits": source_correlations,
+            },
+        },
+        # 兼容旧调用：保留原字段，便于非 start-live 模板复用时读取。
+        "legacy_crisp_l": {
+            "reproduction": {
+                "scenarios": scenarios,
             },
             "plan": {
                 "actions": plan_actions,
@@ -785,18 +851,21 @@ def _merge_start_live_and_source(
 
 def analyze_start_live_flow_with_source(
     log_path: str,
-    source_root: str = "source/GZCheSuPaiApp",
+    source_root: str = START_LIVE_FIXED_SOURCE_ROOT,
     rule_path: str = "source/log_rule.md",
     start_ts_ms: Optional[int] = None,
     end_ts_ms: Optional[int] = None,
     c_startswith: str = "1",
     keywords: str = "CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
-    max_flows: int = 1000,
+    max_flows: int = DEFAULT_START_LIVE_MAX_FLOWS,
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
     max_output_lines: int = 1000,
 ) -> dict[str, Any]:
     """联合输出 start-live flow 聚合 + 通用源码关联分析 + CRISP-L 融合结果。"""
+    # start-live 助手固定使用业务源码仓：source/GZCheSuPaiApp
+    effective_source_root = START_LIVE_FIXED_SOURCE_ROOT
+
     start_live_analysis = analyze_start_live_flow(
         log_path=log_path,
         start_ts_ms=start_ts_ms,
@@ -810,7 +879,7 @@ def analyze_start_live_flow_with_source(
 
     source_analysis = analyze_log_with_source(
         log_path=log_path,
-        source_root=source_root,
+        source_root=effective_source_root,
         rule_path=rule_path,
         start_ts_ms=start_ts_ms,
         end_ts_ms=end_ts_ms,
@@ -823,7 +892,7 @@ def analyze_start_live_flow_with_source(
     merged_analysis = _merge_start_live_and_source(
         start_live_analysis=start_live_analysis,
         source_analysis=source_analysis,
-        source_root=source_root,
+        source_root=effective_source_root,
         rule_path=rule_path,
     )
 
@@ -831,11 +900,13 @@ def analyze_start_live_flow_with_source(
         "meta": {
             "analysis_type": "start_live_flow_crisp_l",
             "log_path": _resolve_log_path(log_path),
-            "source_root": _abs_path(source_root),
+            "source_root": _abs_path(effective_source_root),
             "rule_path": _abs_path(rule_path),
         },
         "start_live_analysis": start_live_analysis,
         "source_analysis": source_analysis,
+        "crisp_l": merged_analysis.get("crisp_l", {}),
+        "abnormal_flows_table": merged_analysis.get("abnormal_flows_table", []),
         "merged_analysis": merged_analysis,
     }
 
@@ -898,13 +969,13 @@ def generate_start_live_flow_markdown(
 
 def analyze_start_live_flow_and_generate_crisp_l_report(
     log_path: str,
-    source_root: str = "source/GZCheSuPaiApp",
+    source_root: str = START_LIVE_FIXED_SOURCE_ROOT,
     rule_path: str = "source/log_rule.md",
     start_ts_ms: Optional[int] = None,
     end_ts_ms: Optional[int] = None,
     c_startswith: str = "1",
     keywords: str = "CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
-    max_flows: int = 1000,
+    max_flows: int = DEFAULT_START_LIVE_MAX_FLOWS,
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
     max_output_lines: int = 1000,
@@ -949,10 +1020,16 @@ def analyze_start_live_flow_and_generate_crisp_l_report(
         "report_path": str(report_path),
         "json_path": str(json_path),
     }
-    json_path.write_text(json.dumps(analysis, ensure_ascii=False, indent=2), encoding="utf-8")
+    flows_payload = (
+        ((analysis.get("start_live_analysis", {}) or {}).get("flows", []))
+        if isinstance(analysis, dict)
+        else []
+    )
+    json_path.write_text(json.dumps(flows_payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
         "analysis": analysis,
+        "json_payload": flows_payload,
         "report_markdown": report_markdown,
         "report_path": str(report_path),
         "json_path": str(json_path),
@@ -965,7 +1042,7 @@ def analyze_start_live_flow_and_generate_report(
     end_ts_ms: Optional[int] = None,
     c_startswith: str = "1",
     keywords: str = "CSP_BIZ_WATCHCAR_STARTLIVE,flowId",
-    max_flows: int = 1000,
+    max_flows: int = DEFAULT_START_LIVE_MAX_FLOWS,
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
     title: str = "startLive 开播链路日志报告",

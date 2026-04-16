@@ -391,32 +391,53 @@ def _evidence_text(evidence_items: list[dict[str, Any]]) -> str:
     )
 
 START_LIVE_STAGE_ORDER: list[tuple[str, str, int]] = [
-    # 恢复链路（通常是开播流程前置检查）
-    ("recover_check_start", "恢复链路", 110),
-    ("recover_api_failure", "恢复链路", 120),
-    # IM 触发实时呼叫
-    ("im_event_received", "IM触发实时呼叫", 210),
-    ("im_event_route_realtime_call", "IM触发实时呼叫", 220),
-    ("realtime_call_handler_enter", "IM触发实时呼叫", 230),
-    ("realtime_call_foreground_present", "IM触发实时呼叫", 240),
-    ("realtime_call_background_notify", "IM触发实时呼叫", 250),
-    # 弹窗点击开播
-    ("realtime_click_enter_room", "弹窗点击开播", 340),
-    ("realtime_click_enter_room_result", "弹窗点击开播", 350),
-    ("precreate_start", "弹窗点击开播", 360),
-    ("precreate_success", "弹窗点击开播", 370),
-    ("precreate_disabled", "弹窗点击开播", 380),
-    ("precreate_failure", "弹窗点击开播", 381),
-    # 跳转直播页并加载直播数据
-    ("jump_recover_enter", "跳转直播页并加载直播数据", 410),
-    ("jump_recover_present_livevc", "跳转直播页并加载直播数据", 420),
-    ("jump_recover_livevc_presented", "跳转直播页并加载直播数据", 430),
-    ("livevc_view_did_load", "跳转直播页并加载直播数据", 440),
-    ("livevc_enter_room_success", "跳转直播页并加载直播数据", 460),
-    ("livevc_update_room_status_success", "跳转直播页并加载直播数据", 470),
-    ("livevc_update_room_status_resume_direct_load", "跳转直播页并加载直播数据", 471),
-    ("livevc_load_room_info_failure", "跳转直播页并加载直播数据", 491),
-    ("livevc_load_live_room_data_finish", "跳转直播页并加载直播数据", 510),
+    # 1) IM触发实时呼叫（Entry A）
+    ("im_event_received", "IM触发实时呼叫（Entry A）", 110),
+    ("im_event_route_realtime_call", "IM触发实时呼叫（Entry A）", 120),
+    ("realtime_call_handler_enter", "IM触发实时呼叫（Entry A）", 130),
+    ("realtime_call_background_notify", "IM触发实时呼叫（Entry A）", 140),
+    ("realtime_call_foreground_present", "IM触发实时呼叫（Entry A）", 150),
+    ("realtime_popup_will_present", "IM触发实时呼叫（Entry A）", 160),
+    ("realtime_popup_skip_priority", "IM触发实时呼叫（Entry A）", 170),
+    ("realtime_popup_skip_small_window", "IM触发实时呼叫（Entry A）", 180),
+    ("realtime_small_window_presented", "IM触发实时呼叫（Entry A）", 190),
+    ("realtime_popup_present", "IM触发实时呼叫（Entry A）", 200),
+    ("realtime_popup_presented", "IM触发实时呼叫（Entry A）", 210),
+    ("realtime_popup_view_did_load", "IM触发实时呼叫（Entry A）", 220),
+    ("realtime_popup_load_data_result", "IM触发实时呼叫（Entry A）", 230),
+    # 2) 恢复呼叫数据（Entry B）
+    ("recover_check_start", "恢复呼叫数据（Entry B）", 310),
+    ("recover_api_failure", "恢复呼叫数据（Entry B）", 320),
+    ("recover_handle_result", "恢复呼叫数据（Entry B）", 330),
+    ("recover_go_realtime_popup", "恢复呼叫数据（Entry B）", 340),
+    # 3) 实时弹窗关闭路径
+    ("realtime_popup_dismiss_cancel", "实时弹窗关闭路径", 410),
+    ("realtime_popup_dismiss_remindStart", "实时弹窗关闭路径", 420),
+    ("realtime_popup_dismiss", "实时弹窗关闭路径", 430),
+    # 4) 弹窗点击开播（预创建）
+    ("realtime_click_enter_room_denied_auth", "弹窗点击开播（预创建）", 510),
+    ("realtime_click_enter_room", "弹窗点击开播（预创建）", 520),
+    ("precreate_start", "弹窗点击开播（预创建）", 530),
+    ("realtime_click_enter_room_result", "弹窗点击开播（预创建）", 540),
+    ("precreate_success", "弹窗点击开播（预创建）", 550),
+    ("precreate_sign_data_nil", "弹窗点击开播（预创建）", 560),
+    ("precreate_disabled", "弹窗点击开播（预创建）", 570),
+    ("precreate_failure", "弹窗点击开播（预创建）", 580),
+    # 5) 跳转直播页并加载直播数据
+    ("jump_recover_enter", "跳转直播页并加载直播数据", 610),
+    ("jump_recover_im_not_login", "跳转直播页并加载直播数据", 620),
+    ("jump_recover_im_login_success_retry", "跳转直播页并加载直播数据", 630),
+    ("jump_recover_im_login_failed", "跳转直播页并加载直播数据", 640),
+    ("jump_recover_present_livevc", "跳转直播页并加载直播数据", 650),
+    ("jump_recover_livevc_presented", "跳转直播页并加载直播数据", 660),
+    ("livevc_view_did_load", "跳转直播页并加载直播数据", 670),
+    ("livevc_enter_room_success", "跳转直播页并加载直播数据", 680),
+    ("livevc_enter_room_fail", "跳转直播页并加载直播数据", 690),
+    ("livevc_update_room_status_resume_direct_load", "跳转直播页并加载直播数据", 700),
+    ("livevc_update_room_status_success", "跳转直播页并加载直播数据", 710),
+    ("livevc_update_room_status_failure", "跳转直播页并加载直播数据", 720),
+    ("livevc_load_room_info_failure", "跳转直播页并加载直播数据", 730),
+    ("livevc_load_live_room_data_finish", "跳转直播页并加载直播数据", 740),
 ]
 
 START_LIVE_STAGE_MAP: dict[str, dict[str, Any]] = {
@@ -426,8 +447,14 @@ START_LIVE_STAGE_MAP: dict[str, dict[str, Any]] = {
 
 START_LIVE_FAILURE_STAGES: set[str] = {
     "recover_api_failure",
+    "realtime_popup_dismiss_cancel",
+    "realtime_popup_dismiss_remindStart",
+    "precreate_sign_data_nil",
     "precreate_disabled",
     "precreate_failure",
+    "jump_recover_im_login_failed",
+    "livevc_enter_room_fail",
+    "livevc_update_room_status_failure",
     "livevc_load_room_info_failure",
 }
 

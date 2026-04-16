@@ -165,7 +165,7 @@ adk web .
 
 ```text
 请使用 $start-live-flow-assistant 分析 source/resource/xxx.log，
-按 flowId 输出最后流程和 stage，结合源码证据生成 CRISP-L 开播链路报告（默认写入 output/[log文件名].md）。
+按 flowId 输出最后流程和 stage， 并输出报告。
 ```
 
 ### 6.4 运行时路由 Skill 名称（`route_by_skill`）

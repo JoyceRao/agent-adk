@@ -5,6 +5,7 @@ from .crisp_l_report_assistant import analyze_and_generate_report, generate_mark
 from .log_filter_assistant import filter_logs
 from .source_correlation_assistant import analyze_log_with_source
 from .start_live_flow_assistant import (
+    START_LIVE_FIXED_SOURCE_ROOT,
     analyze_start_live_flow_and_generate_crisp_l_report,
     analyze_start_live_flow_with_source,
 )
@@ -97,7 +98,7 @@ def route_by_skill(
     keywords: Optional[str] = None,
     c_startswith: Optional[str] = None,
     max_output_lines: int = 1000,
-    max_flows: int = 1000,
+    max_flows: int = 2000,
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
     generate_start_live_report: bool = True,
@@ -175,6 +176,7 @@ def route_by_skill(
         missing = _require_log_path()
         if missing:
             return missing
+        start_live_source_root = START_LIVE_FIXED_SOURCE_ROOT
         effective_title = (
             title.strip()
             if title and title.strip() and title.strip() != "日志分析报告"
@@ -192,7 +194,7 @@ def route_by_skill(
         if generate_start_live_report:
             generated = analyze_start_live_flow_and_generate_crisp_l_report(
                 log_path=log_path or "",
-                source_root=source_root,
+                source_root=start_live_source_root,
                 rule_path=rule_path,
                 start_ts_ms=start_ts_ms,
                 end_ts_ms=end_ts_ms,
@@ -220,7 +222,7 @@ def route_by_skill(
         else:
             start_live_result = analyze_start_live_flow_with_source(
                 log_path=log_path or "",
-                source_root=source_root,
+                source_root=start_live_source_root,
                 rule_path=rule_path,
                 start_ts_ms=start_ts_ms,
                 end_ts_ms=end_ts_ms,
