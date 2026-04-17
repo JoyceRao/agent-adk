@@ -36,6 +36,18 @@ SKILL_DEFINITIONS: dict[str, dict[str, Any]] = {
         "aliases": ["report", "crisp-l", "report-skill"],
         "description": "CRISP-L 报告生成与落盘。",
     },
+    "incident-oneclick-assistant": {
+        "delegated_agent": "root_agent",
+        "tool": "analyze_incident_one_click",
+        "aliases": [
+            "incident-oneclick",
+            "oneclick",
+            "incident",
+            "用户日志一键分析",
+            "日志一键分析",
+        ],
+        "description": "自然语言事故输入 -> SQL画像查询 -> 日志分析一键编排。",
+    },
     "log-orchestrator-assistant": {
         "delegated_agent": "root_agent",
         "tool": "orchestration(filter->analysis->report)",
@@ -81,13 +93,14 @@ def list_skills() -> dict[str, Any]:
         "skills": skills,
         "usage_hint": (
             "调用 route_by_skill 时，skill_name 可传规范名（如 log-filter-assistant）"
-            "或别名（如 filter/report/orchestrator/start-live）。"
+            "或别名（如 filter/report/orchestrator/start-live/oneclick）。"
         ),
     }
 
 
 def route_by_skill(
     skill_name: str,
+    incident_text: Optional[str] = None,
     log_path: Optional[str] = None,
     source_root: str = "source/GZCheSuPaiApp",
     rule_path: str = "source/log_rule.md",
@@ -139,6 +152,41 @@ def route_by_skill(
             keywords=keywords,
             c_startswith=c_startswith,
             max_output_lines=max_output_lines,
+        )
+        return {
+            "skill_name": skill_name,
+            "normalized_skill_name": normalized_skill,
+            "delegated_agent": meta["delegated_agent"],
+            "tool": meta["tool"],
+            "result": result,
+        }
+
+    if normalized_skill == "incident-oneclick-assistant":
+        if not incident_text:
+            return {
+                "error": "该 Skill 需要 incident_text 参数。",
+                "normalized_skill_name": normalized_skill,
+                "required_args": ["incident_text"],
+            }
+        missing = _require_log_path()
+        if missing:
+            return missing
+
+        from .incident_oneclick_assistant import analyze_incident_one_click
+
+        result = analyze_incident_one_click(
+            incident_text=incident_text,
+            log_path=log_path or "",
+            source_root=source_root,
+            rule_path=rule_path,
+            output_dir=output_dir,
+            start_ts_ms=start_ts_ms,
+            end_ts_ms=end_ts_ms,
+            max_output_lines=max_output_lines,
+            max_flows=max_flows,
+            include_stage_path=include_stage_path,
+            exclude_last_stage=exclude_last_stage,
+            title=title,
         )
         return {
             "skill_name": skill_name,

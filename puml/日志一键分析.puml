@@ -1,0 +1,120 @@
+@startuml
+title 日志一键分析流程（自然语言 -> SQL画像 -> 日志检索 -> 开播分流/通用报告）
+
+start
+
+:用户输入 incident_text;
+note right
+示例：
+"user_id=123456，2026-04-17 iOS
+发生开播失败问题"
+end note
+
+partition "Root Agent" {
+  :调用 parse_incident_text;
+  if (解析成功?) then (否)
+    :返回缺失参数提示;
+    note right
+必须补齐：
+dt / user_id / app_id
+app_id: 20=iOS, 21=Android
+end note
+    stop
+  endif
+
+  :得到 parsed_incident;
+  note right
+{
+  dt,
+  user_id,
+  app_id(20/21),
+  start_ts_ms/end_ts_ms,
+  problem_desc,
+  keywords_hint
+}
+end note
+}
+
+partition "User SQL Tool" {
+  :调用 query_user_profile_by_sql(dt,user_id,app_id);
+  if (命中用户画像?) then (否)
+    :返回 USER_PROFILE_NOT_FOUND;
+    note right
+提示核对 dt/user_id/app_id
+end note
+    stop
+  endif
+
+  :输出 user_profile(含脱敏 device_id);
+}
+
+partition "Incident Orchestrator" {
+  :拼装检索参数;
+  note right
+keywords = problem_desc/keywords_hint
+         + user_id
+         + device_id
+         + app_version
+         + os_version
+end note
+
+  :调用 filter_logs(首次检索);
+  if (matched_entries == 0?) then (是)
+    :放宽一次条件
+(降级关键词/扩大语义);
+    :再次调用 filter_logs;
+    if (仍为0?) then (是)
+      :输出无数据报告并结束;
+      stop
+    endif
+  endif
+
+  if (problem_desc 命中开播语义?) then (是)
+    :通过 route_by_skill
+调用 start-live-flow-assistant;
+    note right
+默认参数：
+c_startswith="1"
+keywords="CSP_BIZ_WATCHCAR_STARTLIVE,flowId"
+exclude_last_stage="recover_check_start"
+end note
+
+    if (flowId/flow_count 有效?) then (否)
+      :降级到通用报告链路;
+      :analyze_log_with_source;
+      :analyze_and_generate_report;
+      :标记 degraded_reason;
+    else (是)
+      :返回 start-live 专项结果;
+      note right
+包含：
+selected_skill="start-live-flow-assistant"
+report_path + json_path
+end note
+    endif
+  else (否)
+    :analyze_log_with_source;
+    :analyze_and_generate_report;
+  endif
+}
+
+partition "统一输出" {
+  :返回结构化结果;
+  note right
+{
+  ok,
+  parsed_incident,
+  sql_params,
+  user_profile,
+  selected_skill,
+  filter_summary,
+  analysis_summary,
+  report_path,
+  report_preview,
+  optional: json_path, degraded_reason
+}
+end note
+}
+
+stop
+@enduml

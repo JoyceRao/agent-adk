@@ -1,0 +1,32 @@
+@startuml
+title  看车业务skill生成流程
+
+start
+
+:1. 发起AI对话\n选中源码范围、涉及类，说明目标要求;
+:2. AI对话\n反复确定日志规范、日志执行方案;
+
+:3. AI执行\n按照方案在源码中插入日志;
+:4. AI执行\n根据源码中的日志生成puml流程文件;
+:5. AI对话\n评审并调整puml文件或日志源码;
+
+while (步骤5评审是否通过?) is (否)
+  :3. AI执行\n按照方案在源码中插入日志;
+  :4. AI执行\n根据源码中的日志生成puml流程文件;
+  :5. AI对话\n评审并调整puml文件或日志源码;
+endwhile (是)
+
+:6. AI执行\n根据puml文件和日志示例、日志规范、报告规范\n生成对应的skill.md;
+:7. AI执行\n生成对应skill;
+:8. AI对话\n根据日志执行skill，输出报告;
+:9. AI对话\n评审报告，修改skill.md，修改对应skill;
+
+while (步骤9评审是否通过?) is (否)
+  :6. AI执行\n修订skill.md;
+  :7. AI执行\n修订skill实现;
+  :8. AI对话\n根据日志执行skill，输出报告;
+  :9. AI对话\n评审报告，修改skill.md，修改对应skill;
+endwhile (是)
+
+stop
+@enduml

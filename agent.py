@@ -11,6 +11,7 @@ try:
     )
     from .tools import (
         analyze_and_generate_report,
+        analyze_incident_one_click,
         analyze_log_with_source,
         analyze_start_live_flow_and_generate_crisp_l_report,
         analyze_start_live_flow_with_source,
@@ -18,6 +19,9 @@ try:
         filter_logs,
         generate_markdown_report,
         list_skills,
+        parse_incident_text,
+        user_profile_sql_api_assistant,
+        query_user_profile_by_sql,
         route_by_skill,
         scan_patterns_full,
         update_gzchesupai_source_by_commit,
@@ -31,6 +35,7 @@ except ImportError:
     )
     from tools import (
         analyze_and_generate_report,
+        analyze_incident_one_click,
         analyze_log_with_source,
         analyze_start_live_flow_and_generate_crisp_l_report,
         analyze_start_live_flow_with_source,
@@ -38,6 +43,9 @@ except ImportError:
         filter_logs,
         generate_markdown_report,
         list_skills,
+        parse_incident_text,
+        user_profile_sql_api_assistant,
+        query_user_profile_by_sql,
         route_by_skill,
         scan_patterns_full,
         update_gzchesupai_source_by_commit,
@@ -119,6 +127,10 @@ root_agent = Agent(
     tools=[
         list_skills,
         route_by_skill,
+        parse_incident_text,
+        analyze_incident_one_click,
+        user_profile_sql_api_assistant,
+        query_user_profile_by_sql,
         analyze_and_generate_report,
         analyze_start_live_flow_and_generate_crisp_l_report,
         update_gzchesupai_source_by_commit,

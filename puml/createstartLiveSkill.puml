@@ -1,0 +1,60 @@
+@startuml
+title createStartLiveSkill - AI对话驱动的 start-live-flow-assistant 生成流程
+
+start
+
+:需求方: 发起 AI 对话\n说明目标、范围与产物要求;
+
+:AI助手: 复述目标并确认输入资料\n(startLive历史信息、日志规范、源码范围);
+if (输入是否足够?) then (否)
+  :需求方: 补充上下文\n(关键类、阶段预期、日志样本);
+  :AI助手: 更新任务边界与执行顺序;
+endif
+
+:AI助手: 步骤1-1\n梳理开播关键流程与阶段候选;
+:步骤1-2: 生成各 stage 的 startLive.puml 初稿;
+
+:需求方: 对照真实业务链路评审关键 stage;
+if (关键 stage 是否准确完整?) then (否)
+  :AI助手: 回溯源码与线上链路\n修正或补齐 startLive.puml;
+  :需求方: 再次评审关键 stage;
+endif
+
+:AI助手: 冻结流程基线\n输出阶段映射与顺序规则;
+:输出物A: startLive.puml 与 stage-process-order 映射;
+
+:AI助手: 步骤2-1\n基于 startLive.puml 和日志规范\n生成源码插桩清单(类/方法/stage/extra字段);
+
+:客户端研发: 在源码插入或调整 stage 日志;
+
+:AI助手: 步骤2-2\n校验源码日志覆盖与命名一致性\n检查 flowId/stage/extra 字段是否达标;
+if (源码插桩是否通过校验?) then (否)
+  :客户端研发: 按 AI 反馈补齐或修正埋点;
+  :AI助手: 重新校验并回传差异;
+endif
+
+:AI助手: 步骤3-1\n基于 startLive.puml + 源码 + 日志规范\n生成 startLiveLog.md AI执行规范;
+
+:需求方: 按规范进行线上检索演练;
+if (检索规范是否可执行?) then (否)
+  :AI助手: 修订 startLiveLog.md 规则、示例与判定口径;
+  :需求方: 复测检索流程;
+endif
+
+:AI助手: 步骤4-1\n沉淀技能实现并维护\nSTART_LIVE_STAGE_ORDER/START_LIVE_STAGE_MAP;
+:步骤4-2: 实现 analyze_start_live_flow\n按 flowId 聚合并判定 last_process/last_stage;
+:步骤4-3: 组装 analyze_start_live_flow_with_source\n融合源码关联与异常证据;
+:步骤4-4: 实现 analyze_start_live_flow_and_generate_crisp_l_report\n输出 0/C/S 与未收敛或失败 flow 明细;
+:步骤4-5: 接入 route_by_skill/prompt/README/SKILL 映射;
+
+:AI助手: 步骤5\n使用样例日志回归验证\n(流程、字段、报告、落盘文件名);
+if (技能结果与流程基线一致?) then (是)
+  :需求方: 发布并使用 start-live-flow-assistant;
+  stop
+else (否)
+  :修订 startLiveLog.md 规则、示例与判定口径;
+  :AI助手: 定位偏差来源\n返回步骤1/2/3对应环节修正;
+  stop
+endif
+
+@enduml
