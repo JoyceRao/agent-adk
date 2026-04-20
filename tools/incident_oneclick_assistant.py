@@ -82,8 +82,18 @@ def _extract_app_id(text: str) -> tuple[Optional[int], str]:
             return (value, "ios" if value == 20 else "android")
         return (None, "")
 
-    has_ios = bool(re.search(r"(?i)\bios\b|苹果|iphone", text))
-    has_android = bool(re.search(r"(?i)\bandroid\b|安卓", text))
+    has_ios = bool(
+        re.search(
+            r"(?i)(?:\bios\b|ios手机|ios端|ios客户端|iphone|苹果)",
+            text,
+        )
+    )
+    has_android = bool(
+        re.search(
+            r"(?i)(?:\bandroid\b|android手机|android端|android客户端|安卓|安卓手机)",
+            text,
+        )
+    )
 
     if has_ios and not has_android:
         return (20, "ios")
@@ -372,7 +382,7 @@ def _write_no_data_report(
 ) -> tuple[str, str]:
     output_path = Path(_abs_path(output_dir))
     output_path.mkdir(parents=True, exist_ok=True)
-    report_filename = f"{Path(log_path).stem}_no_data.md"
+    report_filename = f"{Path(log_path).stem}.md"
     report_path = output_path / report_filename
 
     lines = [
@@ -698,6 +708,8 @@ def analyze_incident_one_click(
             include_stage_path=include_stage_path,
             exclude_last_stage=exclude_last_stage,
             generate_start_live_report=True,
+            start_live_report_filename=f"{Path(local_log_path).stem}.md",
+            start_live_json_filename=f"{Path(local_log_path).stem}.json",
             output_dir=output_dir,
             title="startLive 开播链路日志报告",
         )

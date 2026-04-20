@@ -20,8 +20,34 @@ class ParsedEntry:
     content: str
     business_level: str
 
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _project_root() -> Path:
+    """返回项目根目录，可通过环境变量覆盖。"""
+    override = str(os.getenv("MY_AGENT_PROJECT_ROOT", "")).strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return _PROJECT_ROOT
+
+
 def _abs_path(path: str) -> str:
-    return str(Path(path).expanduser().resolve())
+    """将路径规范化为绝对路径。
+
+    规则：
+    1) 绝对路径：直接使用；
+    2) 相对路径：统一按项目根目录解析，避免受 cwd 影响；
+    3) 空字符串：返回项目根目录。
+    """
+    raw = str(path or "").strip()
+    if not raw:
+        return str(_project_root())
+
+    path_obj = Path(raw).expanduser()
+    if path_obj.is_absolute():
+        return str(path_obj.resolve())
+    return str((_project_root() / path_obj).resolve())
 
 
 def _resolve_log_path(log_path: str) -> str:
@@ -29,8 +55,7 @@ def _resolve_log_path(log_path: str) -> str:
 
     规则：
     1) 绝对路径：直接使用；
-    2) 相对路径（如 source/resource/xxx.log）：优先按当前工作目录解析，
-       若不存在则按项目根目录解析；
+    2) 相对路径：统一按项目根目录解析；
     3) 仅文件名（如 xxx.log）：等价映射到 source/resource/xxx.log（项目根目录下）。
     """
     raw = str(log_path or "").strip()
@@ -41,16 +66,12 @@ def _resolve_log_path(log_path: str) -> str:
     if path_obj.is_absolute():
         return str(path_obj.resolve())
 
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = _project_root()
     default_log_dir = project_root / "source" / "resource"
 
     # 仅文件名：强制映射到 source/resource/<filename>
     if path_obj.parent == Path("."):
         return str((default_log_dir / path_obj.name).resolve())
-
-    cwd_candidate = (Path.cwd() / path_obj).resolve()
-    if cwd_candidate.exists():
-        return str(cwd_candidate)
 
     return str((project_root / path_obj).resolve())
 
