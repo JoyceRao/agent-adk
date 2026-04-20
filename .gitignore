@@ -6,3 +6,4 @@ node_modules/
 source/resource/*
 output/*
 .env
+source/db_constants.py

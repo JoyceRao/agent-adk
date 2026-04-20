@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
@@ -22,24 +23,155 @@ def _looks_like_user_profile_row(value: dict[str, Any]) -> bool:
     return len(keys & target) >= 3
 
 
-def _find_first_row(value: Any) -> Optional[dict[str, Any]]:
+def _split_select_items(select_clause: str) -> list[str]:
+    items: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    in_single = False
+    in_double = False
+    for ch in select_clause:
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            buf.append(ch)
+            continue
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            buf.append(ch)
+            continue
+        if in_single or in_double:
+            buf.append(ch)
+            continue
+        if ch == "(":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            item = "".join(buf).strip()
+            if item:
+                items.append(item)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        items.append(tail)
+    return items
+
+
+def _normalize_identifier(text: str) -> str:
+    value = str(text or "").strip()
+    if not value:
+        return value
+    if "." in value:
+        value = value.split(".")[-1].strip()
+    if (
+        (value.startswith("`") and value.endswith("`"))
+        or (value.startswith('"') and value.endswith('"'))
+        or (value.startswith("[") and value.endswith("]"))
+    ):
+        value = value[1:-1].strip()
+    return value
+
+
+def _extract_sql_columns(sql_text: str) -> list[str]:
+    sql = str(sql_text or "").strip()
+    if not sql:
+        return []
+    matched = re.search(r"\bselect\b(.*?)\bfrom\b", sql, flags=re.IGNORECASE | re.DOTALL)
+    if not matched:
+        return []
+    select_clause = matched.group(1)
+    result: list[str] = []
+    for expr in _split_select_items(select_clause):
+        alias_match = re.search(r"\bas\s+([`\"\[\]\w.]+)\s*$", expr, flags=re.IGNORECASE)
+        if alias_match:
+            name = _normalize_identifier(alias_match.group(1))
+        else:
+            plain_alias_match = re.search(r"\s+([`\"\[\]\w.]+)\s*$", expr)
+            if plain_alias_match and "(" in expr:
+                name = _normalize_identifier(plain_alias_match.group(1))
+            else:
+                name = _normalize_identifier(expr)
+        if name:
+            result.append(name)
+    return result
+
+
+def _extract_payload_columns(value: Any) -> list[str]:
+    if isinstance(value, list):
+        if value and all(isinstance(item, str) for item in value):
+            return [str(item).strip() for item in value if str(item).strip()]
+        if value and all(isinstance(item, dict) for item in value):
+            cols: list[str] = []
+            for item in value:
+                for key in ("name", "column", "field", "label"):
+                    if key in item and str(item.get(key, "")).strip():
+                        cols.append(str(item.get(key, "")).strip())
+                        break
+            if cols:
+                return cols
+    if isinstance(value, dict):
+        for key in ("columns", "columnNames", "fields", "headers"):
+            if key in value:
+                cols = _extract_payload_columns(value.get(key))
+                if cols:
+                    return cols
+        for child in value.values():
+            cols = _extract_payload_columns(child)
+            if cols:
+                return cols
+    return []
+
+
+def _coerce_row_dict(row: Any, columns: list[str]) -> Optional[dict[str, Any]]:
+    if isinstance(row, dict):
+        return row
+    if isinstance(row, (list, tuple)):
+        if not columns:
+            return None
+        mapped: dict[str, Any] = {}
+        for idx, value in enumerate(row):
+            if idx >= len(columns):
+                break
+            mapped[str(columns[idx])] = value
+        return mapped if mapped else None
+    return None
+
+
+def _find_first_row(value: Any, columns_hint: list[str]) -> Optional[dict[str, Any]]:
     if isinstance(value, dict):
         if _looks_like_user_profile_row(value):
             return value
+        payload_columns = _extract_payload_columns(value)
+        effective_columns = payload_columns or columns_hint
         preferred = ["data", "result", "rows", "list", "records", "obj", "content"]
         for key in preferred:
             if key in value:
-                found = _find_first_row(value.get(key))
+                child = value.get(key)
+                child_row = _coerce_row_dict(child, effective_columns)
+                if child_row is not None and _looks_like_user_profile_row(child_row):
+                    return child_row
+                found = _find_first_row(child, effective_columns)
                 if found is not None:
                     return found
         for child in value.values():
-            found = _find_first_row(child)
+            found = _find_first_row(child, effective_columns)
             if found is not None:
                 return found
         return None
     if isinstance(value, list):
+        row_as_dict = _coerce_row_dict(value, columns_hint)
+        if row_as_dict is not None and _looks_like_user_profile_row(row_as_dict):
+            return row_as_dict
         for child in value:
-            found = _find_first_row(child)
+            child_as_dict = _coerce_row_dict(child, columns_hint)
+            if child_as_dict is not None and _looks_like_user_profile_row(child_as_dict):
+                return child_as_dict
+            found = _find_first_row(child, columns_hint)
             if found is not None:
                 return found
         return None
@@ -144,7 +276,8 @@ def user_profile_sql_api_assistant(
             "response_preview": _safe_preview(body_text),
         }
 
-    row = _find_first_row(parsed)
+    sql_columns = _extract_sql_columns(sql_text=sql_text)
+    row = _find_first_row(parsed, columns_hint=sql_columns)
     if row is None:
         return {
             "ok": False,
