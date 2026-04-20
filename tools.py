@@ -6,6 +6,7 @@ This module re-exports the public tool functions for legacy imports.
 
 from tools import (
     SKILL_DEFINITIONS,
+    apm_log_sql_assistant,
     analyze_and_generate_report,
     analyze_incident_one_click,
     analyze_log_with_source,
@@ -19,6 +20,7 @@ from tools import (
     generate_markdown_report,
     list_skills,
     parse_incident_text,
+    download_url_assistant,
     user_profile_sql_api_assistant,
     query_user_profile_by_sql,
     route_by_skill,
@@ -31,8 +33,10 @@ __all__ = [
     "update_gzchesupai_source_by_commit",
     "parse_incident_text",
     "analyze_incident_one_click",
+    "apm_log_sql_assistant",
     "user_profile_sql_api_assistant",
     "query_user_profile_by_sql",
+    "download_url_assistant",
     "analyze_log_with_source",
     "scan_patterns_full",
     "build_timeline",

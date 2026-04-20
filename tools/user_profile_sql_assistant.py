@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from source.db_constants import DB_CONFIG
+from .db_constants import DB_CONFIG
 from .user_profile_sql_api_assistant import user_profile_sql_api_assistant
 
 USER_PROFILE_SQL_TEMPLATE = (
@@ -125,9 +125,9 @@ def query_user_profile_by_sql(
     """按 dt + user_id + app_id 查询用户画像信息（Python 版本）。
 
     说明：
-    1) 连接配置默认读取 source/db_constants.py，也支持环境变量覆盖：
+    1) 连接配置默认读取 tools/db_constants.py，也支持环境变量覆盖：
        USER_PROFILE_DB_URL / USER_PROFILE_DB_USERNAME / USER_PROFILE_DB_PASSWORD / USER_PROFILE_DB_GROUP
-    2) 当前实现基于 MySQL 协议连接（pymysql 或 mysql-connector-python）。
+    2) 查询顺序：优先 MySQL 直连（pymysql 或 mysql-connector-python），失败后回退 SQL API。
     3) SQL 执行对齐 Java Statement.executeQuery(finalSQL) 风格：
        先做入参校验和字面量转义，再执行完整 SQL 字符串。
     """
@@ -149,173 +149,124 @@ def query_user_profile_by_sql(
     db_cfg = _load_db_config()
 
     final_sql = _build_final_sql(normalized_dt, normalized_user_id, normalized_app_id)
-    api_attempt = user_profile_sql_api_assistant(
-        sql=final_sql,
-        timeout_seconds=timeout_seconds,
-    )
-    if api_attempt.get("ok"):
-        api_row = api_attempt.get("row", {}) or {}
-        return {
-            "ok": True,
-            "source": "sql_api_assistant",
-            "connector": "http",
-            "db_group": db_cfg.get("group", ""),
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-            "sql_preview": final_sql,
-            "api_http_status": api_attempt.get("http_status", 0),
-            "api_url": api_attempt.get("api_url", ""),
-            "user_profile": _to_profile(api_row),
-        }
-    api_fallback_reason = {
-        "ok": False,
-        "error_code": str(api_attempt.get("error_code", "")),
-        "message": str(api_attempt.get("message", "")),
-        "http_status": api_attempt.get("http_status", 0),
-        "api_url": api_attempt.get("api_url", ""),
+    params = {
+        "dt": normalized_dt,
+        "user_id": normalized_user_id,
+        "app_id": normalized_app_id,
     }
 
-    if not db_cfg.get("url"):
-        return {
-            "ok": False,
-            "error_code": "DB_CONFIG_MISSING",
-            "message": "数据库 URL 未配置。",
-            "sql_preview": final_sql,
-            "api_attempt": api_fallback_reason,
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-        }
-
-    try:
-        host, port, database = _parse_mysql_jdbc_url(db_cfg["url"])
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error_code": "DB_URL_PARSE_ERROR",
-            "message": str(exc),
-            "db_url": db_cfg.get("url", ""),
-            "sql_preview": final_sql,
-            "api_attempt": api_fallback_reason,
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-        }
+    mysql_attempt_reason: dict[str, Any] = {
+        "ok": False,
+        "error_code": "",
+        "message": "",
+    }
 
     connector_name = ""
     conn = None
     cursor = None
+    row: dict[str, Any] | None = None
     try:
-        try:
-            import pymysql  # type: ignore
-
-            connector_name = "pymysql"
-            conn = pymysql.connect(
-                host=host,
-                port=port,
-                user=db_cfg["username"],
-                password=db_cfg["password"],
-                database=database,
-                charset="utf8mb4",
-                connect_timeout=max(1, int(timeout_seconds)),
-                read_timeout=max(1, int(timeout_seconds)),
-                write_timeout=max(1, int(timeout_seconds)),
-                cursorclass=pymysql.cursors.DictCursor,
-            )
-            cursor = conn.cursor()
-            # 对齐 Java Statement.executeQuery(finalSQL) 风格
-            cursor.execute(final_sql)
-            row = cursor.fetchone()
-        except ModuleNotFoundError:
-            import mysql.connector  # type: ignore
-
-            connector_name = "mysql.connector"
-            base_conn_kwargs = {
-                "host": host,
-                "port": port,
-                "user": db_cfg["username"],
-                "password": db_cfg["password"],
-                "database": database,
-                "connection_timeout": max(1, int(timeout_seconds)),
-                "autocommit": True,
-            }
-            clear_password_kwargs = dict(base_conn_kwargs)
-            clear_password_kwargs.update(
-                {
-                    "auth_plugin": "mysql_clear_password",
-                }
-            )
-            try:
-                conn = mysql.connector.connect(**clear_password_kwargs)
-            except Exception:
-                conn = mysql.connector.connect(**base_conn_kwargs)
-            cursor = conn.cursor(dictionary=True)
-            # 对齐 Java Statement.executeQuery(finalSQL) 风格
-            cursor.execute(final_sql)
-            row = cursor.fetchone()
-
-        if not row:
-            return {
+        if not db_cfg.get("url"):
+            mysql_attempt_reason = {
                 "ok": False,
-                "error_code": "USER_PROFILE_NOT_FOUND",
-                "message": "未查询到用户信息，请核对 dt/user_id/app_id。",
-                "sql_preview": final_sql,
-                "api_attempt": api_fallback_reason,
-                "params": {
-                    "dt": normalized_dt,
-                    "user_id": normalized_user_id,
-                    "app_id": normalized_app_id,
-                },
+                "error_code": "DB_CONFIG_MISSING",
+                "message": "数据库 URL 未配置。",
             }
+        else:
+            try:
+                host, port, database = _parse_mysql_jdbc_url(db_cfg["url"])
+            except Exception as exc:
+                mysql_attempt_reason = {
+                    "ok": False,
+                    "error_code": "DB_URL_PARSE_ERROR",
+                    "message": str(exc),
+                    "db_url": db_cfg.get("url", ""),
+                }
+            else:
+                try:
+                    try:
+                        import pymysql  # type: ignore
 
-        profile = _to_profile(row)
-        return {
-            "ok": True,
-            "source": "mysql_fallback",
-            "connector": connector_name,
-            "db_group": db_cfg.get("group", ""),
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-            "sql_preview": final_sql,
-            "api_attempt": api_fallback_reason,
-            "user_profile": profile,
-        }
-    except ModuleNotFoundError:
-        return {
-            "ok": False,
-            "error_code": "DB_DRIVER_MISSING",
-            "message": "未安装数据库驱动，请安装 pymysql 或 mysql-connector-python。",
-            "sql_preview": final_sql,
-            "api_attempt": api_fallback_reason,
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-        }
-    except Exception as exc:
-        return {
-            "ok": False,
-            "error_code": "DB_QUERY_FAILED",
-            "message": str(exc),
-            "sql_preview": final_sql,
-            "api_attempt": api_fallback_reason,
-            "params": {
-                "dt": normalized_dt,
-                "user_id": normalized_user_id,
-                "app_id": normalized_app_id,
-            },
-        }
+                        connector_name = "pymysql"
+                        conn = pymysql.connect(
+                            host=host,
+                            port=port,
+                            user=db_cfg["username"],
+                            password=db_cfg["password"],
+                            database=database,
+                            charset="utf8mb4",
+                            connect_timeout=max(1, int(timeout_seconds)),
+                            read_timeout=max(1, int(timeout_seconds)),
+                            write_timeout=max(1, int(timeout_seconds)),
+                            cursorclass=pymysql.cursors.DictCursor,
+                        )
+                        cursor = conn.cursor()
+                        # 对齐 Java Statement.executeQuery(finalSQL) 风格
+                        cursor.execute(final_sql)
+                        row = cursor.fetchone()
+                    except ModuleNotFoundError:
+                        import mysql.connector  # type: ignore
+
+                        connector_name = "mysql.connector"
+                        base_conn_kwargs = {
+                            "host": host,
+                            "port": port,
+                            "user": db_cfg["username"],
+                            "password": db_cfg["password"],
+                            "database": database,
+                            "connection_timeout": max(1, int(timeout_seconds)),
+                            "autocommit": True,
+                        }
+                        clear_password_kwargs = dict(base_conn_kwargs)
+                        clear_password_kwargs.update(
+                            {
+                                "auth_plugin": "mysql_clear_password",
+                            }
+                        )
+                        try:
+                            conn = mysql.connector.connect(**clear_password_kwargs)
+                        except Exception:
+                            conn = mysql.connector.connect(**base_conn_kwargs)
+                        cursor = conn.cursor(dictionary=True)
+                        # 对齐 Java Statement.executeQuery(finalSQL) 风格
+                        cursor.execute(final_sql)
+                        row = cursor.fetchone()
+                except ModuleNotFoundError:
+                    mysql_attempt_reason = {
+                        "ok": False,
+                        "error_code": "DB_DRIVER_MISSING",
+                        "message": "未安装数据库驱动，请安装 pymysql 或 mysql-connector-python。",
+                    }
+                except Exception as exc:
+                    mysql_attempt_reason = {
+                        "ok": False,
+                        "error_code": "DB_QUERY_FAILED",
+                        "message": str(exc),
+                        "connector": connector_name,
+                    }
+                else:
+                    if row:
+                        profile = _to_profile(row)
+                        return {
+                            "ok": True,
+                            "source": "mysql_direct",
+                            "connector": connector_name,
+                            "db_group": db_cfg.get("group", ""),
+                            "params": params,
+                            "sql_preview": final_sql,
+                            "api_attempt": {
+                                "ok": False,
+                                "error_code": "SKIPPED",
+                                "message": "MySQL 直连成功，未调用 SQL API。",
+                            },
+                            "user_profile": profile,
+                        }
+                    mysql_attempt_reason = {
+                        "ok": False,
+                        "error_code": "USER_PROFILE_NOT_FOUND",
+                        "message": "MySQL 未查询到用户信息，请核对 dt/user_id/app_id。",
+                        "connector": connector_name,
+                    }
     finally:
         try:
             if cursor is not None:
@@ -327,3 +278,44 @@ def query_user_profile_by_sql(
                 conn.close()
         except Exception:
             pass
+
+    api_attempt = user_profile_sql_api_assistant(
+        sql=final_sql,
+        timeout_seconds=timeout_seconds,
+    )
+    if api_attempt.get("ok"):
+        api_row = api_attempt.get("row", {}) or {}
+        return {
+            "ok": True,
+            "source": "sql_api_assistant",
+            "connector": "http",
+            "db_group": db_cfg.get("group", ""),
+            "params": params,
+            "sql_preview": final_sql,
+            "api_http_status": api_attempt.get("http_status", 0),
+            "api_url": api_attempt.get("api_url", ""),
+            "mysql_attempt": mysql_attempt_reason,
+            "user_profile": _to_profile(api_row),
+        }
+
+    api_failure = {
+        "ok": False,
+        "error_code": str(api_attempt.get("error_code", "")),
+        "message": str(api_attempt.get("message", "")),
+        "http_status": api_attempt.get("http_status", 0),
+        "api_url": api_attempt.get("api_url", ""),
+    }
+
+    result = {
+        "ok": False,
+        "error_code": str(mysql_attempt_reason.get("error_code", "USER_PROFILE_QUERY_FAILED")),
+        "message": str(mysql_attempt_reason.get("message", "用户画像查询失败。")),
+        "sql_preview": final_sql,
+        "api_attempt": api_failure,
+        "params": params,
+    }
+    if "db_url" in mysql_attempt_reason:
+        result["db_url"] = mysql_attempt_reason.get("db_url", "")
+    if "connector" in mysql_attempt_reason:
+        result["connector"] = mysql_attempt_reason.get("connector", "")
+    return result

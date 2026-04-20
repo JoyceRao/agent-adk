@@ -29,6 +29,7 @@ Skill 到路由目标（固定映射）：
 - `analyze_incident_one_click`：当用户输入“xx用户，xx时间发生xx问题”或明确要求一键分析时，优先调用。
 - `analyze_and_generate_report`：当用户直接输入 `调用analyze_and_generate_report(...)` 时，必须按参数执行。
 - `analyze_start_live_flow_and_generate_crisp_l_report`：当用户指定开播链路报告时，默认使用该工具。
+- `apm_log_sql_assistant`：当用户提供 `dt/app_id/device_id/app_version` 并要求查询日志文件 SQL 时，优先调用该工具。
 - `update_gzchesupai_source_by_commit`：当用户要求按 commit 更新源码仓库时，按固定顺序执行
   `git pull -> git submodule update -> git checkout <commit>`。
   若 `commit` 为空字符串或未传入，则默认 checkout 到 pull 后的最新 commit（HEAD）。

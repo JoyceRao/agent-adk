@@ -2,8 +2,10 @@ from .crisp_l_report_assistant import analyze_and_generate_report, generate_mark
 from .incident_oneclick_assistant import analyze_incident_one_click, parse_incident_text
 from .log_filter_assistant import filter_logs
 from .source_repo_update_assistant import update_gzchesupai_source_by_commit
+from .apm_log_sql_assistant import apm_log_sql_assistant
 from .user_profile_sql_api_assistant import user_profile_sql_api_assistant
 from .user_profile_sql_assistant import query_user_profile_by_sql
+from .download_url_assistant import download_url_assistant
 from .skill_router import SKILL_DEFINITIONS, list_skills, route_by_skill
 from .source_correlation_assistant import analyze_log_with_source, build_timeline, scan_patterns_full
 from .start_live_flow_assistant import (
@@ -19,8 +21,10 @@ __all__ = [
     "update_gzchesupai_source_by_commit",
     "parse_incident_text",
     "analyze_incident_one_click",
+    "apm_log_sql_assistant",
     "user_profile_sql_api_assistant",
     "query_user_profile_by_sql",
+    "download_url_assistant",
     "analyze_log_with_source",
     "scan_patterns_full",
     "build_timeline",
