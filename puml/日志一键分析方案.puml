@@ -1,0 +1,105 @@
+@startuml
+title 日志一键分析流程（自然语言 -> 用户画像 -> 日志文件 SQL -> 下载本地 -> 问题分析）
+
+start
+
+:用户输入 incident_text;
+note right
+示例：
+"user_id=123456，2026-04-17 iOS
+发生开播失败问题"
+end note
+
+partition "Root Agent" {
+  :调用 parse_incident_text;
+  if (解析成功?) then (否)
+    :返回缺失参数提示;
+    note right
+必须补齐：
+dt / user_id / app_id
+app_id: 20=iOS, 21=Android
+end note
+    stop
+  endif
+
+  :得到 parsed_incident;
+  note right
+{
+  dt,
+  user_id,
+  app_id(20/21),
+  start_ts_ms/end_ts_ms,
+  problem_desc,
+  keywords_hint
+}
+end note
+}
+
+partition "用户信息查询" {
+  :调用 query_user_profile_by_sql(dt,user_id,app_id);
+  if (命中用户画像?) then (否)
+    :返回 USER_PROFILE_NOT_FOUND;
+    stop
+  endif
+  :得到 user_profile
+(device_id/app_version/os_version...);
+}
+
+partition "日志文件定位与下载" {
+  :调用 apm_log_sql_assistant
+(dt, app_id, device_id, app_version);
+  if (命中 log_file_name?) then (否)
+    :返回 LOG_RECORD_NOT_FOUND;
+    stop
+  endif
+
+  :拼接下载地址;
+  note right
+download_url =
+${LOG_DOWNLOAD_URL}?name=${log_file_name}
+end note
+
+  :调用 download_url_assistant(download_url);
+  if (下载成功?) then (否)
+    :返回 LOG_DOWNLOAD_FAILED;
+    stop
+  endif
+
+  :得到本地日志文件 local_log_path;
+}
+
+partition "本地日志分析" {
+  :基于 local_log_path 执行 filter_logs;
+  if (matched_entries == 0?) then (是)
+    :放宽一次关键词再筛选;
+    if (仍为0?) then (是)
+      :输出无数据报告并结束;
+      stop
+    endif
+  endif
+
+  :analyze_log_with_source(local_log_path);
+  :analyze_and_generate_report(local_log_path);
+}
+
+partition "统一输出" {
+  :返回结构化结果;
+  note right
+{
+  ok,
+  parsed_incident,
+  sql_params,
+  user_profile,
+  log_record(log_file_name),
+  log_download(download_url/saved_path),
+  analyzed_log_path,
+  filter_summary,
+  analysis_summary,
+  report_path,
+  report_preview
+}
+end note
+}
+
+stop
+@enduml

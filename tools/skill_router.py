@@ -46,7 +46,7 @@ SKILL_DEFINITIONS: dict[str, dict[str, Any]] = {
             "用户日志一键分析",
             "日志一键分析",
         ],
-        "description": "自然语言事故输入 -> SQL画像查询 -> 日志分析一键编排。",
+        "description": "自然语言事故输入 -> 用户画像 SQL -> 日志文件 SQL -> 下载本地日志 -> 一键分析。",
     },
     "log-orchestrator-assistant": {
         "delegated_agent": "root_agent",
@@ -168,9 +168,6 @@ def route_by_skill(
                 "normalized_skill_name": normalized_skill,
                 "required_args": ["incident_text"],
             }
-        missing = _require_log_path()
-        if missing:
-            return missing
 
         from .incident_oneclick_assistant import analyze_incident_one_click
 

@@ -4,8 +4,12 @@ import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from .apm_log_sql_assistant import apm_log_sql_assistant
 from .crisp_l_report_assistant import analyze_and_generate_report
+from .db_constants import LOG_DOWNLOAD_URL
+from .download_url_assistant import download_url_assistant
 from .log_filter_assistant import filter_logs
 from .source_correlation_assistant import analyze_log_with_source
 from .shared import _abs_path
@@ -333,6 +337,32 @@ def _build_report_path(log_path: str, output_dir: str) -> str:
     return str(Path(_abs_path(output_dir)) / report_filename)
 
 
+def _build_log_download_url(log_file_name: str) -> str:
+    base_url = str(LOG_DOWNLOAD_URL or "").strip()
+    if not base_url:
+        raise ValueError("LOG_DOWNLOAD_URL 未配置。")
+
+    normalized_log_file_name = str(log_file_name or "").strip()
+    if not normalized_log_file_name:
+        raise ValueError("log_file_name 不能为空。")
+
+    split_result = urlsplit(base_url)
+    if not split_result.scheme or not split_result.netloc:
+        raise ValueError("LOG_DOWNLOAD_URL 格式不合法。")
+
+    query_items = dict(parse_qsl(split_result.query, keep_blank_values=True))
+    query_items["name"] = normalized_log_file_name
+    return urlunsplit(
+        (
+            split_result.scheme,
+            split_result.netloc,
+            split_result.path,
+            urlencode(query_items, safe="/"),
+            split_result.fragment,
+        )
+    )
+
+
 def _write_no_data_report(
     *,
     incident_text: str,
@@ -375,7 +405,7 @@ def _write_no_data_report(
 
 def analyze_incident_one_click(
     incident_text: str,
-    log_path: str,
+    log_path: str = "",
     source_root: str = "source/GZCheSuPaiApp",
     rule_path: str = "source/log_rule.md",
     output_dir: str = "output",
@@ -387,7 +417,7 @@ def analyze_incident_one_click(
     exclude_last_stage: str = "recover_check_start",
     title: str = "日志分析报告",
 ) -> dict[str, Any]:
-    """一键编排：自然语言解析 -> SQL 用户画像 -> 日志筛选 -> 分流分析。"""
+    """一键编排：自然语言解析 -> SQL 用户画像 -> 日志文件 SQL -> 下载本地日志 -> 分析。"""
     parsed_result = parse_incident_text(incident_text)
     if not parsed_result.get("ok", False):
         return {
@@ -422,11 +452,142 @@ def analyze_incident_one_click(
         "dt": profile_raw.get("dt", dt),
         "app_id": int(profile_raw.get("app_id", app_id) or app_id),
         "platform": str(profile_raw.get("platform", "")),
-        "device_id": str(profile_raw.get("device_id_masked", "") or profile_raw.get("device_id", "")),
+        "device_id": str(
+            profile_raw.get("device_id_masked", "") or profile_raw.get("device_id", "")
+        ),
         "user_id": str(profile_raw.get("user_id", user_id)),
         "model": str(profile_raw.get("model", "")),
         "app_version": str(profile_raw.get("app_version", "")),
         "os_version": str(profile_raw.get("os_version", "")),
+    }
+    profile_device_id = str(profile_raw.get("device_id", "")).strip()
+    profile_app_version = str(profile_raw.get("app_version", "")).strip()
+
+    if not profile_device_id or not profile_app_version:
+        return {
+            "ok": False,
+            "stage": "query_user_profile_by_sql",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "error_code": "USER_PROFILE_INCOMPLETE",
+            "message": "用户画像缺少 device_id 或 app_version，无法继续查询日志文件记录。",
+        }
+
+    log_record_query = apm_log_sql_assistant(
+        dt=dt,
+        app_id=app_id,
+        device_id=profile_device_id,
+        app_version=profile_app_version,
+    )
+    if not log_record_query.get("ok", False):
+        return {
+            "ok": False,
+            "stage": "apm_log_sql_assistant",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "log_record_query": log_record_query,
+            "error_code": log_record_query.get("error_code", "LOG_RECORD_QUERY_FAILED"),
+            "message": log_record_query.get("message", "日志文件记录查询失败。"),
+        }
+
+    log_record = log_record_query.get("log_record", {}) or {}
+    log_file_name = str(log_record.get("log_file_name", "")).strip()
+    if not log_file_name:
+        return {
+            "ok": False,
+            "stage": "apm_log_sql_assistant",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "log_record_query": log_record_query,
+            "error_code": "LOG_FILE_NAME_MISSING",
+            "message": "日志文件记录中未包含 log_file_name。",
+        }
+
+    try:
+        download_url = _build_log_download_url(log_file_name)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "stage": "build_download_url",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "log_record_query": log_record_query,
+            "error_code": "DOWNLOAD_URL_BUILD_FAILED",
+            "message": str(exc),
+        }
+
+    download_result = download_url_assistant(url=download_url)
+    if not download_result.get("ok", False):
+        return {
+            "ok": False,
+            "stage": "download_url_assistant",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "log_record_query": log_record_query,
+            "download_url": download_url,
+            "download_result": download_result,
+            "error_code": download_result.get("error_code", "LOG_DOWNLOAD_FAILED"),
+            "message": download_result.get("message", "日志下载失败。"),
+        }
+
+    local_log_path = str(download_result.get("saved_path", "")).strip()
+    if not local_log_path or not Path(local_log_path).exists():
+        return {
+            "ok": False,
+            "stage": "download_url_assistant",
+            "parsed_incident": parsed_incident,
+            "sql_params": {
+                "dt": dt,
+                "user_id": user_id,
+                "app_id": app_id,
+            },
+            "user_profile": profile_for_output,
+            "log_record_query": log_record_query,
+            "download_url": download_url,
+            "download_result": download_result,
+            "error_code": "LOCAL_LOG_NOT_FOUND",
+            "message": "日志下载完成但本地文件不存在。",
+        }
+
+    log_record_for_output = {
+        "app_id": int(log_record.get("app_id", app_id) or app_id),
+        "app_version": str(log_record.get("app_version", "")),
+        "device_id": str(log_record.get("device_id_masked", "")),
+        "log_file_name": log_file_name,
+        "log_date": int(log_record.get("log_date", 0) or 0),
+    }
+    download_summary = {
+        "download_url": download_url,
+        "download_dir": str(download_result.get("download_dir", "")),
+        "filename": str(download_result.get("filename", "")),
+        "saved_path": local_log_path,
+        "size_bytes": int(download_result.get("size_bytes", 0) or 0),
+        "http_status": int(download_result.get("http_status", 0) or 0),
     }
 
     effective_start_ts = (
@@ -447,15 +608,15 @@ def analyze_incident_one_click(
         [
             *[str(x) for x in keywords_hint],
             user_id,
-            str(profile_raw.get("device_id", "")),
-            str(profile_raw.get("app_version", "")),
+            profile_device_id,
+            profile_app_version,
             str(profile_raw.get("os_version", "")),
         ]
     )
     relaxed_keywords = _merge_keywords([problem_desc, *[str(x) for x in keywords_hint], user_id])
 
     initial_filter = filter_logs(
-        log_path=log_path,
+        log_path=local_log_path,
         start_ts_ms=effective_start_ts,
         end_ts_ms=effective_end_ts,
         keywords=full_keywords,
@@ -469,7 +630,7 @@ def analyze_incident_one_click(
     if int(initial_filter.get("matched_entries", 0) or 0) <= 0:
         filter_relaxed = True
         relaxed_filter = filter_logs(
-            log_path=log_path,
+            log_path=local_log_path,
             start_ts_ms=effective_start_ts,
             end_ts_ms=effective_end_ts,
             keywords=relaxed_keywords,
@@ -492,7 +653,7 @@ def analyze_incident_one_click(
             incident_text=incident_text,
             parsed_incident=parsed_incident,
             output_dir=output_dir,
-            log_path=log_path,
+            log_path=local_log_path,
         )
         return {
             "ok": True,
@@ -504,6 +665,9 @@ def analyze_incident_one_click(
                 "app_id": app_id,
             },
             "user_profile": profile_for_output,
+            "log_record": log_record_for_output,
+            "log_download": download_summary,
+            "analyzed_log_path": local_log_path,
             "filter_summary": filter_summary,
             "analysis_summary": {
                 "anomaly_count": 0,
@@ -522,7 +686,7 @@ def analyze_incident_one_click(
 
         routed = route_by_skill(
             skill_name="start-live-flow-assistant",
-            log_path=log_path,
+            log_path=local_log_path,
             source_root=source_root,
             rule_path=rule_path,
             start_ts_ms=effective_start_ts,
@@ -550,7 +714,7 @@ def analyze_incident_one_click(
 
         if routed.get("error") or flow_count <= 0:
             fallback_analysis = analyze_log_with_source(
-                log_path=log_path,
+                log_path=local_log_path,
                 source_root=source_root,
                 rule_path=rule_path,
                 start_ts_ms=effective_start_ts,
@@ -559,7 +723,7 @@ def analyze_incident_one_click(
                 max_output_lines=max_output_lines,
             )
             fallback_report_markdown = analyze_and_generate_report(
-                log_path=log_path,
+                log_path=local_log_path,
                 source_root=source_root,
                 rule_path=rule_path,
                 start_ts_ms=effective_start_ts,
@@ -581,12 +745,15 @@ def analyze_incident_one_click(
                     "app_id": app_id,
                 },
                 "user_profile": profile_for_output,
+                "log_record": log_record_for_output,
+                "log_download": download_summary,
+                "analyzed_log_path": local_log_path,
                 "filter_summary": filter_summary,
                 "analysis_summary": {
                     "anomaly_count": len(fallback_analysis.get("anomalies", []) or []),
                     "source_hit_count": len(fallback_analysis.get("source_correlations", []) or []),
                 },
-                "report_path": _build_report_path(log_path=log_path, output_dir=output_dir),
+                "report_path": _build_report_path(log_path=local_log_path, output_dir=output_dir),
                 "report_preview": fallback_report_markdown.splitlines()[:20],
                 "report_markdown": fallback_report_markdown,
             }
@@ -602,6 +769,9 @@ def analyze_incident_one_click(
                 "app_id": app_id,
             },
             "user_profile": profile_for_output,
+            "log_record": log_record_for_output,
+            "log_download": download_summary,
+            "analyzed_log_path": local_log_path,
             "filter_summary": filter_summary,
             "analysis_summary": {
                 "anomaly_count": len(merged_analysis.get("anomalies", []) or []),
@@ -616,7 +786,7 @@ def analyze_incident_one_click(
         }
 
     analysis = analyze_log_with_source(
-        log_path=log_path,
+        log_path=local_log_path,
         source_root=source_root,
         rule_path=rule_path,
         start_ts_ms=effective_start_ts,
@@ -625,7 +795,7 @@ def analyze_incident_one_click(
         max_output_lines=max_output_lines,
     )
     report_markdown = analyze_and_generate_report(
-        log_path=log_path,
+        log_path=local_log_path,
         source_root=source_root,
         rule_path=rule_path,
         start_ts_ms=effective_start_ts,
@@ -646,12 +816,15 @@ def analyze_incident_one_click(
             "app_id": app_id,
         },
         "user_profile": profile_for_output,
+        "log_record": log_record_for_output,
+        "log_download": download_summary,
+        "analyzed_log_path": local_log_path,
         "filter_summary": filter_summary,
         "analysis_summary": {
             "anomaly_count": len(analysis.get("anomalies", []) or []),
             "source_hit_count": len(analysis.get("source_correlations", []) or []),
         },
-        "report_path": _build_report_path(log_path=log_path, output_dir=output_dir),
+        "report_path": _build_report_path(log_path=local_log_path, output_dir=output_dir),
         "report_preview": report_markdown.splitlines()[:20],
         "report_markdown": report_markdown,
     }

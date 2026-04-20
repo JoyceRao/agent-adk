@@ -124,7 +124,7 @@ def apm_log_sql_assistant(
     app_id: int | str,
     device_id: str,
     app_version: str,
-    timeout_seconds: int = 30,
+    timeout_seconds: int = 360,
 ) -> dict[str, Any]:
     """按 dt + app_id + device_id + app_version 查询日志文件记录。"""
     try:

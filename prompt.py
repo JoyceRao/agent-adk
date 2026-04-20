@@ -26,7 +26,7 @@ Skill 到路由目标（固定映射）：
 
 直接工具调用约定（root 可用）：
 - `parse_incident_text`：仅解析自然语言事故描述，输出 `dt/user_id/app_id(20/21)` 与问题描述。
-- `analyze_incident_one_click`：当用户输入“xx用户，xx时间发生xx问题”或明确要求一键分析时，优先调用。
+- `analyze_incident_one_click`：当用户输入“xx用户，xx时间发生xx问题”或明确要求一键分析时，优先调用。链路为“参数解析 -> 用户画像 SQL -> 日志文件 SQL -> 下载本地 -> 分析报告”。
 - `analyze_and_generate_report`：当用户直接输入 `调用analyze_and_generate_report(...)` 时，必须按参数执行。
 - `analyze_start_live_flow_and_generate_crisp_l_report`：当用户指定开播链路报告时，默认使用该工具。
 - `apm_log_sql_assistant`：当用户提供 `dt/app_id/device_id/app_version` 并要求查询日志文件 SQL 时，优先调用该工具。
