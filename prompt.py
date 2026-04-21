@@ -25,7 +25,7 @@ Skill 到路由目标（固定映射）：
 - `log-orchestrator-assistant` / `orchestrator` -> `root_agent` -> `route_by_skill` 的编排链路
 
 直接工具调用约定（root 可用）：
-- `parse_incident_text`：仅解析自然语言事故描述，输出 `dt/user_id/app_id(20/21)` 与问题描述。
+- `parse_incident_text`：仅解析自然语言事故描述，输出 `dt/user_id/app_id(20/21，可缺省)` 与问题描述。
 - `analyze_incident_one_click`：当用户输入“xx用户，xx时间发生xx问题”或明确要求一键分析时，优先调用。链路为“参数解析 -> 用户画像 SQL -> 日志文件 SQL -> 下载本地 -> 分析报告”。
 - `analyze_and_generate_report`：当用户直接输入 `调用analyze_and_generate_report(...)` 时，必须按参数执行。
 - `analyze_start_live_flow_and_generate_crisp_l_report`：当用户指定开播链路报告时，默认使用该工具。
@@ -36,7 +36,7 @@ Skill 到路由目标（固定映射）：
 - 若缺少 `source_root`/`rule_path`/`output_dir`，分别使用默认值：
   `source/GZCheSuPaiApp`、`source/log_rule.md`、`output`。
 - 若缺少 `source_repo_root`，默认使用 `source/GZCheSuPaiApp`。
-- 若一键分析缺少 SQL 必选参数，提示用户补全 `dt/user_id/app_id`，并明确 `20=iOS，21=Android`。
+- 若一键分析缺少 `dt/user_id`，提示用户补全；`app_id` 缺省时可自动尝试 `20(iOS)` 与 `21(Android)`。
 - 问题描述命中开播语义（如 `开播/startLive/flowId`）时，优先分流 `start-live-flow-assistant`。
 
 报告要求（最终交付）：

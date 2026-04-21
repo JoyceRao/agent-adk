@@ -204,12 +204,38 @@ def _build_api_url(sql_text: str, api_url: Optional[str] = None) -> str:
     return f"{DEFAULT_SQL_API_ENDPOINT}?{query_string}"
 
 
+def _normalize_optional_app_id(
+    app_id: Optional[int | str] = None,
+    appId: Optional[int | str] = None,
+) -> tuple[Optional[int], str]:
+    raw = app_id if app_id not in (None, "") else appId
+    if raw in (None, ""):
+        return (None, "")
+    try:
+        value = int(raw)
+    except Exception:
+        return (None, "app_id/appId 必须是整数，且仅支持 20(iOS) 或 21(Android)。")
+    if value not in (20, 21):
+        return (None, "app_id/appId 仅支持 20(iOS) 或 21(Android)。")
+    return (value, "")
+
+
 def user_profile_sql_api_assistant(
     sql: str,
     timeout_seconds: int = 20,
     api_url: Optional[str] = None,
+    app_id: Optional[int | str] = None,
+    appId: Optional[int | str] = None,
 ) -> dict[str, Any]:
     """通过 SQL API 请求执行 sql 并返回首行结果。"""
+    normalized_app_id, app_id_error = _normalize_optional_app_id(app_id=app_id, appId=appId)
+    if app_id_error:
+        return {
+            "ok": False,
+            "error_code": "INVALID_ARGUMENT",
+            "message": app_id_error,
+        }
+
     sql_text = str(sql or "").strip()
     if not sql_text:
         return {
@@ -292,6 +318,7 @@ def user_profile_sql_api_assistant(
         "ok": True,
         "http_status": status_code,
         "api_url": final_api_url,
+        "app_id": normalized_app_id,
         "row": row,
         "response_preview": _safe_preview(body_text),
     }

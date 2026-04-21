@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -26,8 +26,12 @@ _START_LIVE_HINTS = (
 )
 
 
-def _local_tzinfo():
-    return datetime.now().astimezone().tzinfo
+# 统一按 UTC+08:00 自然日边界将 dt 转为 Unix 毫秒时间戳，避免受运行机器本地时区影响。
+_QUERY_TZ = timezone(timedelta(hours=8))
+
+
+def _query_tzinfo():
+    return _QUERY_TZ
 
 
 def _to_ms(dt_obj: datetime) -> int:
@@ -40,7 +44,7 @@ def _parse_date_token(raw: str) -> date:
 
 
 def _day_window_ms(d: date) -> tuple[int, int]:
-    tzinfo = _local_tzinfo()
+    tzinfo = _query_tzinfo()
     start_dt = datetime.combine(d, time(0, 0, 0), tzinfo=tzinfo)
     end_dt = datetime.combine(d, time(23, 59, 59, 999000), tzinfo=tzinfo)
     return (_to_ms(start_dt), _to_ms(end_dt))
@@ -102,8 +106,24 @@ def _extract_app_id(text: str) -> tuple[Optional[int], str]:
     return (None, "")
 
 
+def _normalize_optional_app_id(
+    app_id: Optional[int | str] = None,
+    appId: Optional[int | str] = None,
+) -> tuple[Optional[int], str]:
+    raw = app_id if app_id not in (None, "") else appId
+    if raw in (None, ""):
+        return (None, "")
+    try:
+        value = int(raw)
+    except Exception:
+        return (None, "app_id/appId 必须是整数，且仅支持 20(iOS) 或 21(Android)。")
+    if value not in (20, 21):
+        return (None, "app_id/appId 仅支持 20(iOS) 或 21(Android)。")
+    return (value, "")
+
+
 def _extract_dt_and_range(text: str) -> tuple[str, Optional[int], Optional[int]]:
-    tzinfo = _local_tzinfo()
+    tzinfo = _query_tzinfo()
 
     # 1) 完整日期 + 时间范围，例如：2026-04-17 10:00~12:00
     same_day_range_pattern = (
@@ -146,7 +166,7 @@ def _extract_dt_and_range(text: str) -> tuple[str, Optional[int], Optional[int]]
         return (d.strftime("%Y-%m-%d"), start_ms, end_ms)
 
     # 4) 相对日期（今天/昨天/前天）
-    now = datetime.now().astimezone()
+    now = datetime.now(tz=tzinfo)
     base_day = now.date()
     relative_map = {
         "今天": 0,
@@ -347,6 +367,34 @@ def _build_report_path(log_path: str, output_dir: str) -> str:
     return str(Path(_abs_path(output_dir)) / report_filename)
 
 
+def _query_user_profile_by_app_candidates(
+    *,
+    dt: str,
+    user_id: str,
+    app_id_candidates: list[int],
+) -> tuple[dict[str, Any], int, list[dict[str, Any]]]:
+    attempts: list[dict[str, Any]] = []
+    last_result: dict[str, Any] = {
+        "ok": False,
+        "error_code": "USER_PROFILE_QUERY_FAILED",
+        "message": "用户画像查询失败。",
+    }
+    for candidate in app_id_candidates:
+        result = query_user_profile_by_sql(dt=dt, user_id=user_id, app_id=candidate)
+        attempts.append(
+            {
+                "app_id": candidate,
+                "ok": bool(result.get("ok", False)),
+                "error_code": str(result.get("error_code", "")),
+                "message": str(result.get("message", "")),
+            }
+        )
+        if result.get("ok", False):
+            return (result, candidate, attempts)
+        last_result = result
+    return (last_result, 0, attempts)
+
+
 def _build_log_download_url(log_file_name: str) -> str:
     base_url = str(LOG_DOWNLOAD_URL or "").strip()
     if not base_url:
@@ -426,22 +474,60 @@ def analyze_incident_one_click(
     include_stage_path: bool = True,
     exclude_last_stage: str = "recover_check_start",
     title: str = "日志分析报告",
+    app_id: Optional[int | str] = None,
+    appId: Optional[int | str] = None,
 ) -> dict[str, Any]:
     """一键编排：自然语言解析 -> SQL 用户画像 -> 日志文件 SQL -> 下载本地日志 -> 分析。"""
-    parsed_result = parse_incident_text(incident_text)
-    if not parsed_result.get("ok", False):
+    explicit_app_id, explicit_app_id_error = _normalize_optional_app_id(app_id=app_id, appId=appId)
+    if explicit_app_id_error:
         return {
             "ok": False,
             "stage": "parse_incident_text",
-            **parsed_result,
+            "error_code": "INVALID_ARGUMENT",
+            "message": explicit_app_id_error,
+            "missing_fields": ["app_id"],
+            "parsed_incident": {},
         }
 
+    parsed_result = parse_incident_text(incident_text)
     parsed_incident = parsed_result.get("parsed_incident", {}) or {}
+    if explicit_app_id is not None:
+        parsed_incident["app_id"] = explicit_app_id
+        parsed_incident["app_name"] = "ios" if explicit_app_id == 20 else "android"
+
+    if not parsed_result.get("ok", False):
+        missing_fields = [str(x) for x in (parsed_result.get("missing_fields", []) or [])]
+        missing_without_app_id = [x for x in missing_fields if x != "app_id"]
+        can_continue_without_app_id = (
+            str(parsed_result.get("error_code", "")) == "MISSING_REQUIRED_FIELDS"
+            and not missing_without_app_id
+        )
+        can_continue_with_explicit = explicit_app_id is not None and not missing_without_app_id
+        if not can_continue_without_app_id and not can_continue_with_explicit:
+            return {
+                "ok": False,
+                "stage": "parse_incident_text",
+                **parsed_result,
+                "parsed_incident": parsed_incident,
+            }
+
     dt = str(parsed_incident.get("dt", ""))
     user_id = str(parsed_incident.get("user_id", ""))
-    app_id = int(parsed_incident.get("app_id", 0) or 0)
+    parsed_app_id = parsed_incident.get("app_id")
+    if explicit_app_id is not None:
+        app_id_candidates = [explicit_app_id]
+    elif isinstance(parsed_app_id, int) and parsed_app_id in (20, 21):
+        app_id_candidates = [parsed_app_id]
+    elif str(parsed_app_id).strip().isdigit() and int(str(parsed_app_id).strip()) in (20, 21):
+        app_id_candidates = [int(str(parsed_app_id).strip())]
+    else:
+        app_id_candidates = [20, 21]
 
-    user_profile_result = query_user_profile_by_sql(dt=dt, user_id=user_id, app_id=app_id)
+    user_profile_result, app_id, user_profile_attempts = _query_user_profile_by_app_candidates(
+        dt=dt,
+        user_id=user_id,
+        app_id_candidates=app_id_candidates,
+    )
     if not user_profile_result.get("ok", False):
         return {
             "ok": False,
@@ -451,13 +537,20 @@ def analyze_incident_one_click(
                 "dt": dt,
                 "user_id": user_id,
                 "app_id": app_id,
+                "app_id_candidates": app_id_candidates,
             },
+            "user_profile_attempts": user_profile_attempts,
             "user_profile_query": user_profile_result,
             "error_code": user_profile_result.get("error_code", "USER_PROFILE_QUERY_FAILED"),
             "message": user_profile_result.get("message", "用户画像查询失败。"),
         }
 
     profile_raw = user_profile_result.get("user_profile", {}) or {}
+    profile_app_id = int(profile_raw.get("app_id", app_id) or app_id)
+    if profile_app_id in (20, 21):
+        app_id = profile_app_id
+    parsed_incident["app_id"] = app_id
+    parsed_incident["app_name"] = "ios" if app_id == 20 else "android"
     profile_for_output = {
         "dt": profile_raw.get("dt", dt),
         "app_id": int(profile_raw.get("app_id", app_id) or app_id),

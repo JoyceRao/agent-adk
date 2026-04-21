@@ -101,6 +101,8 @@ def list_skills() -> dict[str, Any]:
 def route_by_skill(
     skill_name: str,
     incident_text: Optional[str] = None,
+    app_id: Optional[int | str] = None,
+    appId: Optional[int | str] = None,
     log_path: Optional[str] = None,
     source_root: str = "source/GZCheSuPaiApp",
     rule_path: str = "source/log_rule.md",
@@ -173,6 +175,8 @@ def route_by_skill(
 
         result = analyze_incident_one_click(
             incident_text=incident_text,
+            app_id=app_id,
+            appId=appId,
             log_path=log_path or "",
             source_root=source_root,
             rule_path=rule_path,
